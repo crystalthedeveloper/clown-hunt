@@ -14,18 +14,13 @@
     color: #ffe600;
 }
 
-/*  Game Logo */
-.scoreboard-logo {
-    width: 140px;
-    height: 86px;
-}
-
 /*  Score & Kills Text */
 .scoreboard-text {
     font-weight: bold;
     font-size: 1.2rem;
     display: flex;
-    justify-content: left;
+    justify-content: flex-start;
+    align-items: center;
     gap: 10px;
-    padding: 0px 0px 10px 38px;
+    padding: 4px 16px;
 }

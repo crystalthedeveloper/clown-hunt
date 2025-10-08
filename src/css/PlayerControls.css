@@ -1,54 +1,96 @@
-/* Controls (Left Side) */
-.controls-container {
+/* Controls bar (bottom center) */
+.controls-bar {
   position: absolute;
-  bottom: 20px;
-  left: 100px;
+  bottom: 36px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
+  align-items: flex-end;
+  gap: 24px;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+/* Virtual Trackpad */
+.trackpad-container {
+  pointer-events: auto;
+  z-index: 1000;
+}
+
+.trackpad-surface {
+  width: 190px;
+  height: 190px;
+  border-radius: 32px;
+  background: rgba(12, 12, 20, 0.8);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: 10px;
-  z-index: 1000;
+  justify-content: center;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  backdrop-filter: blur(10px);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.controls-container button {
-  padding: 10px 20px;
-  background: #333;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
+.trackpad-surface:active {
+  cursor: grabbing;
 }
 
-.controls-container button:hover {
-  background: #555;
+.trackpad-surface:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 6px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.45);
 }
 
-.controls-container div {
-  display: flex;
-  gap: 40px;
+.trackpad-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.5);
+  transform: translate3d(0, 0, 0);
+  transition: transform 120ms ease-out;
+  pointer-events: none;
 }
 
-/* Shooting Button (Right Side) */
-.shoot-container {
+.trackpad-instructions {
   position: absolute;
-  bottom: 54px;
-  right: 100px;
-  z-index: 1000;
+  bottom: 16px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.85);
+  text-transform: uppercase;
+  letter-spacing: 0.08rem;
+  pointer-events: none;
+}
+
+/* Shooting Button */
+.shoot-container {
+  pointer-events: auto;
 }
 
 .shoot-container button {
-  padding: 20px 25px;
-  font-size: 1.5rem;
-  background: #333;
-  color: white;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 12, 20, 0.8);
+  color: #fff;
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+  box-shadow: 0px 6px 16px rgba(0, 0, 0, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  transition: transform 120ms ease, background 160ms ease, border-color 160ms ease;
 }
 
 .shoot-container button:hover {
-  background: #555;
+  background: rgba(30, 30, 40, 0.85);
+  border-color: rgba(255, 255, 255, 0.55);
   transform: scale(1.1);
 }
 
@@ -56,19 +98,59 @@
   transform: scale(0.95);
 }
 
+.shoot-container button:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 6px;
+}
+
 /* 📱 Mobile Optimizations */
 @media (max-width: 768px) {
 
-  /* Controls (Left Side) */
-  .controls-container {
-    left: 50px;
-
+  .controls-bar {
+    bottom: 28px;
+    gap: 18px;
   }
 
-  /* Shooting Button (Right Side) */
-  .shoot-container {
-    right: 50px;
-
+  .trackpad-surface {
+    width: 150px;
+    height: 150px;
+    border-radius: 28px;
   }
 
+  .trackpad-thumb {
+    width: 58px;
+    height: 58px;
+  }
+
+  .trackpad-instructions {
+    font-size: 0.75rem;
+    bottom: 12px;
+  }
+
+  .shoot-container button {
+    padding: 18px 20px;
+    font-size: 1.4rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .controls-bar {
+    bottom: 22px;
+    gap: 14px;
+  }
+
+  .trackpad-surface {
+    width: 130px;
+    height: 130px;
+  }
+
+  .trackpad-thumb {
+    width: 50px;
+    height: 50px;
+  }
+
+  .shoot-container button {
+    padding: 16px 18px;
+    font-size: 1.3rem;
+  }
 }

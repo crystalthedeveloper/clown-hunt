@@ -2,13 +2,59 @@
 // components/WelcomeScreen.tsx
 
 import React, { useEffect, useState } from "react";
+import { fetchLeaderboardSnapshot, LeaderboardSnapshotEntry } from "../store/SupabaseLeaderboard";
 import "../css/WelcomeScreen.css";
 
-const WelcomeScreen: React.FC<{ onStart: () => void; userName: string | null }> = ({ onStart, userName }) => {
+interface WelcomeScreenProps {
+  onStart: () => void;
+  onSignOut: () => void;
+  userName: string | null;
+  isGuest?: boolean;
+}
+
+const resolveDisplayName = (name: string | null, isGuest?: boolean): string => {
+  if (!name) return "Player";
+  if (isGuest) return name.trim() || "Guest";
+  const trimmed = name.trim();
+  const [first] = trimmed.split(/\s+/);
+  return first || "Player";
+};
+
+const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart, onSignOut, userName, isGuest }) => {
   const [isVisible, setIsVisible] = useState(true);
+  const [topKills, setTopKills] = useState<number | null>(null);
 
   useEffect(() => {
     setIsVisible(true);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const snapshot = await fetchLeaderboardSnapshot();
+        if (!active) return;
+
+        const ranked = snapshot
+          .filter((entry) => Number.isFinite(entry.kills))
+          .sort((a, b) => {
+            const rankA = typeof a.rank === "number" ? a.rank : Infinity;
+            const rankB = typeof b.rank === "number" ? b.rank : Infinity;
+            if (rankA !== rankB) return rankA - rankB;
+            return (b.kills ?? 0) - (a.kills ?? 0);
+          });
+
+        const topEntry: LeaderboardSnapshotEntry | undefined = ranked[0];
+        setTopKills(topEntry ? topEntry.kills : null);
+      } catch {
+        if (!active) return;
+        setTopKills(null);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleStart = () => {
@@ -20,30 +66,29 @@ const WelcomeScreen: React.FC<{ onStart: () => void; userName: string | null }> 
     <div className={`welcome-screen ${isVisible ? "fade-in" : "fade-out"}`}>
       <div className="welcome-box">
         <h1 className="welcome-box-header">
-          Welcome, <span className="username">{userName || "Player"}</span> 🎪
+          Welcome, <span className="username">{resolveDisplayName(userName, isGuest)}</span>
         </h1>
-        <p>Get ready for <strong>The Developer: Clown Hunt FPS!</strong></p>
+        <p>Prepare for Clown Hunt FPS.</p>
+        {typeof topKills === "number" && topKills > 0 && (
+          <p className="high-score-banner">
+            Top kills: <strong>{topKills}</strong>
+          </p>
+        )}
 
         <div className="button-container">
-          <button className="play-button" onClick={handleStart}>
-            🎯 PLAY
+          <button className="primary-button" onClick={handleStart}>
+            Start Game
           </button>
-        </div>
-
-        {/* Always Visible Controls Section */}
-        <div className="controls fade-in">
-          <h2 className="controls-header">🎮 Controls:</h2>
-          <p>⬆️⬇️⬅️➡️ / WASD → Move</p>
-          <p>🔫 Spacebar → Shoot</p>
-          <p>🖱️ Click → Shoot</p>
-          
-        </div>
-        <button
-            className="corporate-button"
+          <button
+            className="secondary-button"
             onClick={() => window.open("https://www.crystalthedeveloper.ca", "_blank")}
           >
-            🏢 Corporate Site
+            Corporate Site
           </button>
+          <button className="signout-button" onClick={onSignOut}>
+            {isGuest ? "Exit Guest" : "Sign Out"}
+          </button>
+          </div>
       </div>
     </div>
   );

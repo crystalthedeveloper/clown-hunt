@@ -8,9 +8,15 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useSphere } from "@react-three/cannon";
 import * as THREE from "three";
 import { useGameStore } from "../store/store";
+import { getWeaponConfig } from "../config/weapons";
 
 const shootSound = new Audio("/single-shot.mp3");
 shootSound.volume = 0.6;
+
+const MUZZLE_FLASH_DURATION = 0.1;
+const RECOIL_BASE = 0.05;
+const RECOIL_DECAY = 7;
+const CAMERA_SHAKE_DECAY = 6;
 
 export interface PlayerRef {
   shoot: () => void;
@@ -24,10 +30,17 @@ interface PlayerProps {
 
 export const Player = forwardRef<PlayerRef, PlayerProps>(
   ({ onDie, bulletsRef }, ref) => {
-    const { velocity, rotation, clownData } = useGameStore();
+    const { velocity, rotation, clownData, bulletLevel } = useGameStore();
     const { camera, scene } = useThree();
+    const weapon = getWeaponConfig(bulletLevel);
 
     const aimDotRef = useRef<THREE.Object3D | null>(null);
+    const muzzleFlashLightRef = useRef<THREE.PointLight | null>(null);
+    const muzzleFlashMeshRef = useRef<THREE.Mesh | null>(null);
+    const muzzleFlashTimerRef = useRef(0);
+    const recoilRef = useRef(0);
+    const cameraShakeRef = useRef(0);
+    const flashStrengthRef = useRef(weapon.flashIntensity);
 
     const [playerBodyRef, api] = useSphere<THREE.Mesh>(() => ({
       mass: 1,
@@ -88,8 +101,39 @@ export const Player = forwardRef<PlayerRef, PlayerProps>(
       };
     }, [scene]);
 
+    useEffect(() => {
+      const light = new THREE.PointLight("#ffeaa0", 0, 4, 2);
+      light.visible = false;
+      light.position.set(0, -0.05, -0.25);
 
-    useFrame(() => {
+      const flashGeometry = new THREE.SphereGeometry(0.08, 12, 12);
+      const flashMaterial = new THREE.MeshBasicMaterial({
+        color: "#ffe38a",
+        transparent: true,
+        opacity: 0,
+      });
+      const flashMesh = new THREE.Mesh(flashGeometry, flashMaterial);
+      flashMesh.visible = false;
+      flashMesh.position.set(0, -0.08, -0.28);
+
+      camera.add(light);
+      camera.add(flashMesh);
+      muzzleFlashLightRef.current = light;
+      muzzleFlashMeshRef.current = flashMesh;
+
+      return () => {
+        camera.remove(light);
+        camera.remove(flashMesh);
+        flashGeometry.dispose();
+        flashMaterial.dispose();
+      };
+    }, [camera]);
+
+    useEffect(() => {
+      flashStrengthRef.current = weapon.flashIntensity;
+    }, [weapon.flashIntensity]);
+
+    useFrame((state, delta) => {
       if (!playerBodyRef.current) return;
 
       const playerRotation = new THREE.Euler(0, rotation, 0);
@@ -102,8 +146,17 @@ export const Player = forwardRef<PlayerRef, PlayerProps>(
       const playerPosition = new THREE.Vector3();
       playerBodyRef.current.getWorldPosition(playerPosition);
 
+      recoilRef.current = THREE.MathUtils.damp(recoilRef.current, 0, RECOIL_DECAY, delta);
+      cameraShakeRef.current = Math.max(0, cameraShakeRef.current - delta * CAMERA_SHAKE_DECAY);
+
       camera.position.set(playerPosition.x, playerPosition.y + 0.5, playerPosition.z);
-      camera.rotation.set(0, rotation, 0);
+      camera.rotation.set(-recoilRef.current, rotation, 0);
+
+      if (cameraShakeRef.current > 0) {
+        const shake = cameraShakeRef.current;
+        camera.position.x += Math.sin(state.clock.elapsedTime * 48) * shake * 0.15;
+        camera.position.y += Math.cos(state.clock.elapsedTime * 52) * shake * 0.1;
+      }
 
       const cameraTarget = new THREE.Vector3(0, 0, -1)
         .applyEuler(camera.rotation)
@@ -134,21 +187,42 @@ export const Player = forwardRef<PlayerRef, PlayerProps>(
         }
       });
 
+      if (muzzleFlashTimerRef.current > 0) {
+        muzzleFlashTimerRef.current = Math.max(0, muzzleFlashTimerRef.current - delta);
+        const normalized = muzzleFlashTimerRef.current / MUZZLE_FLASH_DURATION;
+        const light = muzzleFlashLightRef.current;
+        const mesh = muzzleFlashMeshRef.current;
+        if (light) {
+          light.intensity = flashStrengthRef.current * normalized;
+          light.visible = normalized > 0;
+        }
+        if (mesh) {
+          mesh.visible = normalized > 0;
+          const material = mesh.material as THREE.MeshBasicMaterial;
+          material.opacity = 0.45 * normalized;
+          const scale = 1 + (1 - normalized) * 0.8;
+          mesh.scale.setScalar(scale);
+        }
+      } else {
+        if (muzzleFlashLightRef.current) muzzleFlashLightRef.current.visible = false;
+        if (muzzleFlashMeshRef.current) muzzleFlashMeshRef.current.visible = false;
+      }
+
       // ✅ Bullet update with realistic distance cap
-      bulletsRef.current.forEach((bullet, index) => {
-        bullet.position.add(bullet.userData.velocity);
+      for (let i = bulletsRef.current.length - 1; i >= 0; i -= 1) {
+        const bullet = bulletsRef.current[i];
+        bullet.position.addScaledVector(bullet.userData.velocity, delta);
+        bullet.userData.travelled =
+          (bullet.userData.travelled || 0) + bullet.userData.velocity.length() * delta;
 
-        // Track traveled distance
-        bullet.userData.travelled = (bullet.userData.travelled || 0) + bullet.userData.velocity.length();
-
-        // Remove if bullet goes too far
-        if (bullet.userData.travelled > 10) {
+        const maxDistance = bullet.userData.maxDistance ?? weapon.maxDistance;
+        if (bullet.userData.travelled > maxDistance) {
           scene.remove(bullet);
           bullet.geometry.dispose();
           (bullet.material as THREE.Material).dispose();
-          bulletsRef.current.splice(index, 1);
+          bulletsRef.current.splice(i, 1);
         }
-      });
+      }
     });
 
     const shoot = () => {
@@ -156,20 +230,50 @@ export const Player = forwardRef<PlayerRef, PlayerProps>(
       shootSound.play();
 
       const bullet = new THREE.Mesh(
-        new THREE.SphereGeometry(0.2, 8, 8),
-        new THREE.MeshStandardMaterial({ color: "black" })
+        new THREE.SphereGeometry(weapon.radius, 12, 12),
+        new THREE.MeshStandardMaterial({
+          color: weapon.color,
+          metalness: 0.35,
+          roughness: 0.3,
+          emissive: weapon.color,
+          emissiveIntensity: 0.25 + weapon.damage / 80,
+        })
       );
 
       const cameraDirection = new THREE.Vector3();
       camera.getWorldDirection(cameraDirection);
 
-      const bulletStartPosition = camera.position.clone().add(cameraDirection.clone().multiplyScalar(0.2));
+      const bulletStartPosition = camera.position
+        .clone()
+        .add(cameraDirection.clone().multiplyScalar(0.6))
+        .add(new THREE.Vector3(0, -0.05, 0));
       bullet.position.copy(bulletStartPosition);
-      bullet.userData.velocity = cameraDirection.clone().multiplyScalar(1); // Slower, more realistic
+      bullet.quaternion.copy(camera.quaternion);
+      const velocity = cameraDirection.clone().normalize().multiplyScalar(weapon.speed);
+      bullet.userData.velocity = velocity;
       bullet.userData.travelled = 0;
+      bullet.userData.maxDistance = weapon.maxDistance;
+      bullet.userData.damage = weapon.damage;
 
       scene.add(bullet);
       bulletsRef.current.push(bullet);
+
+      muzzleFlashTimerRef.current = MUZZLE_FLASH_DURATION;
+      flashStrengthRef.current = weapon.flashIntensity;
+      const recoilKick = RECOIL_BASE * (weapon.damage / 18);
+      recoilRef.current = Math.min(recoilRef.current + recoilKick, 0.35);
+      cameraShakeRef.current = 0.01 + weapon.damage * 0.0003;
+
+      if (muzzleFlashLightRef.current) {
+        muzzleFlashLightRef.current.visible = true;
+        muzzleFlashLightRef.current.intensity = weapon.flashIntensity;
+      }
+      if (muzzleFlashMeshRef.current) {
+        muzzleFlashMeshRef.current.visible = true;
+        const mat = muzzleFlashMeshRef.current.material as THREE.MeshBasicMaterial;
+        mat.opacity = 0.45;
+        muzzleFlashMeshRef.current.scale.setScalar(1);
+      }
     };
 
     return (

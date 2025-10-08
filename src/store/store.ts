@@ -1,6 +1,7 @@
 // store/store.ts
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
+import { weaponConfigs } from "../config/weapons";
 
 type Position = [number, number, number];
 
@@ -8,6 +9,7 @@ interface Clown {
   id: number;
   position: Position;
   isAlive: boolean;
+  health: number;
 }
 
 interface PlayerState {
@@ -32,7 +34,9 @@ interface GameState {
   gameResult: "win" | "lose" | null;
   clownData: Clown[];
   logoPositions: Position[];
-  playTime: number;
+  bulletLevel: number;
+  bulletDamage: number;
+  bulletPulse: number;
 
   // Computed scores
   logoScore: number;
@@ -45,8 +49,8 @@ interface GameState {
   setCollectedLogos: (count: number | ((prev: number) => number)) => void;
   setClownData: (clowns: Clown[] | ((prev: Clown[]) => Clown[])) => void;
   setLogoPositions: (positions: Position[]) => void;
-  setPlayTime: (value: number | ((prev: number) => number)) => void;
-  resetPlayTime: () => void;
+  setBulletLevel: (level: number) => void;
+  upgradeBullet: () => void;
   resetGame: () => void;
 }
 
@@ -69,14 +73,16 @@ export const useGameStore = create<PlayerState & GameState>()(
     gameResult: null,
     clownData: [],
     logoPositions: [],
-    playTime: 0,
+    bulletLevel: 0,
+    bulletDamage: weaponConfigs[0]?.damage ?? 0,
+    bulletPulse: 0,
 
     // Computed values
     get logoScore() {
-      return get().collectedLogos * 40;
+      return 0;
     },
     get killScore() {
-      return get().kills * 20;
+      return get().kills;
     },
 
     setVelocity: (x, z) => set(() => ({ velocity: { x, z } })),
@@ -116,8 +122,6 @@ export const useGameStore = create<PlayerState & GameState>()(
 
         return {
           collectedLogos: newCount,
-          isGameOver: newCount >= state.totalLogos,
-          gameResult: newCount >= state.totalLogos ? "win" : state.gameResult,
         };
       }),
 
@@ -130,16 +134,16 @@ export const useGameStore = create<PlayerState & GameState>()(
       })),
 
     setLogoPositions: (positions) => set(() => ({ logoPositions: positions })),
-
-    setPlayTime: (valueOrUpdater) =>
-      set((state) => ({
-        playTime:
-          typeof valueOrUpdater === "function"
-            ? valueOrUpdater(state.playTime)
-            : valueOrUpdater,
-      })),
-
-    resetPlayTime: () => set(() => ({ playTime: 0 })),
+    setBulletLevel: (level) =>
+      set((state) => {
+        const clamped = Math.max(0, Math.min(Math.floor(level), weaponConfigs.length - 1));
+        return {
+          bulletLevel: clamped,
+          bulletDamage: weaponConfigs[clamped]?.damage ?? 0,
+          bulletPulse: state.bulletPulse + 1,
+        };
+      }),
+    upgradeBullet: () => undefined,
 
     resetGame: () =>
       set((state) => ({
@@ -149,7 +153,9 @@ export const useGameStore = create<PlayerState & GameState>()(
         gameResult: null,
         clownData: [],
         logoPositions: [],
-        playTime: 0,
+        bulletLevel: 0,
+        bulletDamage: weaponConfigs[0]?.damage ?? 0,
+        bulletPulse: state.bulletPulse + 1,
         velocity: { x: 0, z: 0 },
         rotation: 0,
         totalLogos: state.totalLogos,

@@ -18,12 +18,6 @@ export class SupabasePlayerStats {
     };
   }
 
-  static formatPlayTime(seconds: number): string {
-    const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
-    const secs = (seconds % 60).toString().padStart(2, "0");
-    return `${mins}:${secs}`;
-  }
-
   static async trackLogin(): Promise<boolean> {
     try {
       const user = await this.getAuthenticatedUser();
@@ -37,7 +31,6 @@ export class SupabasePlayerStats {
           logo: null,
           kills: null,
           game_result: null,
-          play_time: null,
           created_at: new Date().toISOString(),
         },
       ]);
@@ -52,28 +45,28 @@ export class SupabasePlayerStats {
     rawKills: number,
     rawLogos: number,
     gameResult: "win" | "lose",
-    playTime: number
+    playerRank?: number | null
   ): Promise<boolean> {
     try {
       const user = await this.getAuthenticatedUser();
       if (!user) return false;
 
-      const killScore = rawKills * 20;
-      const logoScore = rawLogos * 40;
-      const formattedTime = this.formatPlayTime(playTime);
+      const killCount = Math.max(0, Math.floor(rawKills));
+      const logoCount = Math.max(0, Math.floor(rawLogos));
+      const payload = {
+        user_id: user.userId,
+        first_name: user.firstName,
+        last_name: user.lastName,
+        logo: logoCount,
+        kills: killCount,
+        player_rank: typeof playerRank === "number" ? playerRank : null,
+        game_result: gameResult.toLowerCase(),
+        updated_at: new Date().toISOString(),
+      };
 
-      const { error } = await supabase.from("player_stats").insert([
-        {
-          user_id: user.userId,
-          first_name: user.firstName,
-          last_name: user.lastName,
-          logo: logoScore,       // ✅ Score for logos
-          kills: killScore,      // ✅ Score for kills
-          game_result: gameResult.toLowerCase(),
-          play_time: formattedTime,
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      const { error } = await supabase
+        .from("player_stats")
+        .upsert(payload, { onConflict: "user_id" });
 
       return !error;
     } catch {

@@ -1,0 +1,3 @@
+export const GROUND_THICKNESS = 1;
+export const GROUND_CENTER_Y = -GROUND_THICKNESS / 2;
+export const GROUND_TOP = GROUND_CENTER_Y + GROUND_THICKNESS / 2;

@@ -1,7 +1,7 @@
 // components/Clown.tsx
 import { useFrame, useThree } from "@react-three/fiber";
-import { useAnimations } from "@react-three/drei";
-import { useEffect, useRef, useMemo, useState } from "react";
+import { useAnimations, Text } from "@react-three/drei";
+import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { useBox } from "@react-three/cannon";
 import * as THREE from "three";
 import { PlayerRef } from "./Player";
@@ -17,6 +17,10 @@ interface ClownProps {
   bulletsRef: React.MutableRefObject<THREE.Mesh[]>;
   onKill: (id: number) => void;
   onCatch: () => void;
+  speedMultiplier: number;
+  detectionRadius: number;
+  aggression: number;
+  initialHealth: number;
 }
 
 export function Clown({
@@ -28,6 +32,10 @@ export function Clown({
   bulletsRef,
   onKill,
   onCatch,
+  speedMultiplier,
+  detectionRadius,
+  aggression,
+  initialHealth,
 }: ClownProps) {
   const clownRef = useRef<THREE.Group>(null);
   const isDyingRef = useRef(false);
@@ -38,6 +46,11 @@ export function Clown({
   const [canCatch, setCanCatch] = useState(false);
   const [isAIActive, setIsAIActive] = useState(false);
   const [isGameOverTriggered, setIsGameOverTriggered] = useState(false);
+  const lateralPhaseRef = useRef(Math.random() * Math.PI * 2);
+  const [health, setHealth] = useState(initialHealth);
+  const healthRef = useRef(initialHealth);
+  type TextMesh = THREE.Mesh & { text: string };
+  const healthTextRef = useRef<TextMesh | null>(null);
 
   const { clonedScene, height } = useMemo(() => {
     const clone = model.clone(true);
@@ -80,25 +93,37 @@ export function Clown({
     collisionFilterMask: 1,
   }));
 
-  const playAnimation = (name: string, speed = 1) => {
+  const playAnimation = useCallback((name: string, speed = 1) => {
     Object.values(actions).forEach((action) => action?.fadeOut(0.2));
     const selected = actions[name];
     if (selected) {
       selected.reset().fadeIn(0.2).setEffectiveTimeScale(speed).play();
     }
-  };
+  }, [actions]);
+  
+  const targetIdleSpeed = Math.max(0.45, Math.min(1, 0.5 + speedMultiplier * 0.25));
 
   useEffect(() => {
-    const catchTimer = setTimeout(() => setCanCatch(true), 1000);
-    const aiTimer = setTimeout(() => setIsAIActive(true), 500);
+    const catchDelay = Math.max(350, 1000 / Math.max(1, aggression));
+    const aiDelay = Math.max(180, 500 / Math.max(1, aggression));
+    const catchTimer = setTimeout(() => setCanCatch(true), catchDelay);
+    const aiTimer = setTimeout(() => setIsAIActive(true), aiDelay);
 
-    playAnimation("idle");
+    playAnimation("idle", targetIdleSpeed);
 
     return () => {
       clearTimeout(catchTimer);
       clearTimeout(aiTimer);
     };
-  }, []);
+  }, [aggression, playAnimation, targetIdleSpeed]);
+
+  useEffect(() => {
+    healthRef.current = initialHealth;
+    setHealth(initialHealth);
+    if (healthTextRef.current) {
+      healthTextRef.current.text = `${initialHealth}`;
+    }
+  }, [initialHealth]);
 
   useEffect(() => {
     return api.position.subscribe(([x, y, z]) => {
@@ -128,31 +153,50 @@ export function Clown({
     const playerPos = playerRef.current.getPosition();
     const distance = clownPos.distanceTo(playerPos);
 
+    const awarenessRadius = detectionRadius * 1.8;
     clown.rotation.x = 0;
     clown.rotation.z = 0;
     clown.lookAt(playerPos);
 
-    if (distance > 20) {
+    if (distance > awarenessRadius) {
       if (isRunning) {
         setIsRunning(false);
-        playAnimation("idle");
+        playAnimation("idle", targetIdleSpeed);
       }
       api.velocity.set(0, 0, 0);
       return;
     }
 
-    if (distance <= 10) {
-      const dir = new THREE.Vector3().subVectors(playerPos, clownPos).normalize();
-      api.velocity.set(dir.x * 90, 0, dir.z * 96);
+    if (healthTextRef.current) {
+      healthTextRef.current.quaternion.copy(camera.quaternion);
+    }
 
+    if (distance <= detectionRadius) {
+      const dir = new THREE.Vector3().subVectors(playerPos, clownPos).normalize();
+      const lateral = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+      const time = performance.now() / 220;
+      const wobble = Math.sin(time + lateralPhaseRef.current) * 0.6 * Math.max(0, aggression - 1);
+      const jitter = Math.cos(time * 0.7 + id) * 0.35 * Math.max(0, aggression - 1);
+      const finalDir = dir.clone().add(lateral.multiplyScalar(wobble)).add(dir.clone().multiplyScalar(jitter * 0.05));
+      finalDir.normalize();
+
+      const chaseSpeed = 5.8 * speedMultiplier * aggression;
+      api.velocity.set(finalDir.x * chaseSpeed, 0, finalDir.z * chaseSpeed);
+
+      const speedScale = Math.max(0.4, Math.min(1.35, chaseSpeed / 8.5));
       if (!isRunning) {
         setIsRunning(true);
-        playAnimation("run", 1.3);
+        playAnimation("run", speedScale);
+      } else {
+        const currentRun = actions["run"];
+        if (currentRun) {
+          currentRun.setEffectiveTimeScale(speedScale);
+        }
       }
     } else {
       if (isRunning) {
         setIsRunning(false);
-        playAnimation("idle");
+        playAnimation("idle", targetIdleSpeed);
       }
       api.velocity.set(0, 0, 0);
     }
@@ -165,37 +209,52 @@ export function Clown({
     }
 
     const clownBox = new THREE.Box3().setFromObject(clown);
-    bulletsRef.current.forEach((bullet, index) => {
+    for (let index = bulletsRef.current.length - 1; index >= 0; index -= 1) {
+      const bullet = bulletsRef.current[index];
       const bulletPos = new THREE.Vector3().setFromMatrixPosition(bullet.matrixWorld);
-      if (clownBox.containsPoint(bulletPos)) {
+      if (!clownBox.containsPoint(bulletPos)) continue;
+
+      const damage = Number(bullet.userData.damage) || 10;
+      const nextHealth = Math.max(0, healthRef.current - damage);
+      healthRef.current = nextHealth;
+      setHealth(nextHealth);
+
+      const blood = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({
+          map: bloodTexture,
+          transparent: true,
+          depthWrite: false,
+        })
+      );
+
+      blood.rotation.z = Math.random() * Math.PI;
+      blood.scale.setScalar(1.2 + Math.random() * 0.6);
+      blood.position.copy(bulletPos);
+      blood.lookAt(camera.position);
+      scene.add(blood);
+
+      setTimeout(() => {
+        blood.removeFromParent();
+        blood.geometry.dispose();
+        (blood.material as THREE.Material).dispose();
+      }, 120);
+
+      bullet.geometry.dispose();
+      bullet.removeFromParent();
+      bulletsRef.current.splice(index, 1);
+
+      if (healthTextRef.current) {
+        if (healthTextRef.current) {
+          healthTextRef.current.text = `${Math.max(0, Math.round(nextHealth))}`;
+        }
+      }
+
+      if (nextHealth <= 0 && !isDyingRef.current) {
         isDyingRef.current = true;
         setIsAlive(false);
         api.velocity.set(0, 0, 0);
-
-        const blood = new THREE.Mesh(
-          new THREE.PlaneGeometry(1, 1),
-          new THREE.MeshBasicMaterial({
-            map: bloodTexture,
-            transparent: true,
-            depthWrite: false,
-          })
-        );
-
-        blood.rotation.z = Math.random() * Math.PI;
-        blood.scale.setScalar(1.5 + Math.random());
-        blood.position.copy(bulletPos);
-        blood.lookAt(camera.position);
-        scene.add(blood);
-
-        setTimeout(() => {
-          blood.removeFromParent();
-          blood.geometry.dispose();
-          (blood.material as THREE.Material).dispose();
-        }, 100);
-
-        bullet.geometry.dispose();
-        bullet.removeFromParent();
-        bulletsRef.current.splice(index, 1);
+        playAnimation("idle", targetIdleSpeed);
 
         setTimeout(() => {
           clown.removeFromParent();
@@ -203,11 +262,23 @@ export function Clown({
           onKill(id);
         }, 100);
       }
-    });
+    }
   });
 
   return isAlive ? (
     <group ref={clownRef}>
+      <Text
+        ref={healthTextRef}
+        position={[0, height + 0.95, 0]}
+        fontSize={0.4}
+        color="#ffeb3b"
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.05}
+        outlineColor="black"
+      >
+        {Math.round(health)}
+      </Text>
       <group rotation={[-Math.PI / 14, 0, 0]}>
         <primitive object={clonedScene} />
       </group>

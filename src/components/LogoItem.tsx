@@ -5,9 +5,10 @@
 import React, { useRef, useMemo } from "react";
 import { useBox } from "@react-three/cannon";
 import { useFrame } from "@react-three/fiber";
-import { Text } from "@react-three/drei"; // ✅ Add this
+import { Text } from "@react-three/drei";
 import * as THREE from "three";
 import { PlayerRef } from "./Player";
+import { getWeaponConfig, weaponConfigs } from "../config/weapons";
 
 // ✅ Load logo collection sound
 const logoSound = new Audio("/logo.mp3");
@@ -18,7 +19,8 @@ interface LogoItemProps {
   position: [number, number, number];
   model: THREE.Group;
   logoIndex: number;
-  onCollect: () => void;
+  displayLevel: number;
+  onCollect: (level: number) => void;
 }
 
 export function LogoItem({
@@ -26,9 +28,12 @@ export function LogoItem({
   position,
   model,
   logoIndex,
+  displayLevel,
   onCollect,
 }: LogoItemProps) {
   const isCollected = useRef(false);
+  const displayIndex = Math.max(0, Math.min(displayLevel, weaponConfigs.length) - 1);
+  const displayDamage = getWeaponConfig(displayIndex).damage;
 
   const clonedLogo = useMemo(() => {
     const clone = model.clone(true);
@@ -90,7 +95,7 @@ export function LogoItem({
       logoSound.currentTime = 0;
       logoSound.play();
 
-      onCollect();
+      onCollect(displayLevel);
 
       api.position.set(0, -100, 0);
       api.mass.set(0);
@@ -100,17 +105,16 @@ export function LogoItem({
 
   return !isCollected.current ? (
     <group ref={ref} castShadow receiveShadow>
-      {/* Floating gold points label */}
       <Text
         position={[0, 0.6, 0]}
-        fontSize={0.2}
-        color="gold"
+        fontSize={0.22}
+        color="#f5f5f5"
         anchorX="center"
         anchorY="middle"
         outlineWidth={0.015}
         outlineColor="black"
       >
-        +40
+        {displayDamage}
       </Text>
 
       <primitive object={clonedLogo} />
