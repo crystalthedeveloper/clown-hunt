@@ -106,7 +106,7 @@ export function GameMenu({
     try {
       const targetRank = projectedRank ?? currentRank ?? null;
       if (isGuest && guestProfile?.email) {
-        await SupabaseGuestProfiles.updateKills(
+        const updatedProfile = await SupabaseGuestProfiles.updateKills(
           guestProfile.email,
           kills,
           userName ?? undefined,
@@ -114,8 +114,9 @@ export function GameMenu({
         );
         const updated = {
           ...guestProfile,
-          kills,
-          player_rank: targetRank,
+          fullName: updatedProfile.display_name ?? guestProfile.fullName,
+          kills: updatedProfile.kills ?? guestProfile.kills ?? kills,
+          player_rank: updatedProfile.player_rank ?? targetRank,
         };
         localStorage.setItem("guestProfile", JSON.stringify(updated));
       } else {

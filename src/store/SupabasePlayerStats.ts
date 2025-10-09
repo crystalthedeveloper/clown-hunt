@@ -53,21 +53,46 @@ export class SupabasePlayerStats {
 
       const killCount = Math.max(0, Math.floor(rawKills));
       const logoCount = Math.max(0, Math.floor(rawLogos));
-      const payload = {
-        user_id: user.userId,
+      const { data: existingRow, error: existingError } = await supabase
+        .from("player_stats")
+        .select("id, kills, player_rank")
+        .eq("user_id", user.userId)
+        .maybeSingle<{ id: string; kills: number | null; player_rank: number | null }>();
+
+      if (existingError) throw existingError;
+
+      const currentBest = existingRow?.kills ?? 0;
+      const nextKills = Math.max(currentBest, killCount);
+      const nextRank =
+        typeof playerRank === "number"
+          ? playerRank
+          : existingRow?.player_rank ?? null;
+
+      const basePayload = {
         first_name: user.firstName,
         last_name: user.lastName,
         logo: logoCount,
-        kills: killCount,
-        player_rank: typeof playerRank === "number" ? playerRank : null,
+        kills: nextKills,
+        player_rank: nextRank,
         game_result: gameResult.toLowerCase(),
         updated_at: new Date().toISOString(),
       };
 
-      const { error } = await supabase
-        .from("player_stats")
-        .upsert(payload, { onConflict: "user_id" });
+      if (existingRow) {
+        const { error } = await supabase
+          .from("player_stats")
+          .update(basePayload)
+          .eq("id", existingRow.id);
+        return !error;
+      }
 
+      const insertPayload = {
+        ...basePayload,
+        user_id: user.userId,
+        created_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from("player_stats").insert([insertPayload]);
       return !error;
     } catch {
       return false;

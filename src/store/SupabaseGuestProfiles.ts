@@ -70,24 +70,41 @@ export const SupabaseGuestProfiles = {
   async updateKills(email: string, kills: number, name?: string, rank?: number | null) {
     const normalized = normalizeEmail(email);
     const cleanedName = sanitizeName(name);
+    const sanitizedKills = Math.max(0, kills);
 
-    const { profile: existing, created } = await this.upsertProfile(normalized, cleanedName ?? undefined);
+    const existing = await this.getByEmail(normalized);
+
+    if (!existing) {
+      const insertPayload = {
+        email: normalized,
+        display_name: cleanedName,
+        kills: sanitizedKills,
+        player_rank: typeof rank === "number" ? rank : null,
+      };
+
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .insert(insertPayload)
+        .select(SELECT_COLUMNS)
+        .single<GuestProfile>();
+
+      if (error) throw error;
+      return data;
+    }
 
     const currentBest = existing.kills ?? 0;
-    const nextBest = Math.max(0, kills);
+    const shouldUpdateKills = sanitizedKills > currentBest;
     const shouldUpdateName = cleanedName && cleanedName !== existing.display_name;
-    const shouldUpdateKills = nextBest !== currentBest;
-
     const shouldUpdateRank = typeof rank === "number" && rank !== existing.player_rank;
 
-    if (!shouldUpdateName && !shouldUpdateKills && !shouldUpdateRank && !created) {
+    if (!shouldUpdateName && !shouldUpdateKills && !shouldUpdateRank) {
       return existing;
     }
 
     const updatePayload: Partial<GuestProfile> = {};
-    if (shouldUpdateKills) updatePayload.kills = nextBest;
+    if (shouldUpdateKills) updatePayload.kills = sanitizedKills;
     if (shouldUpdateName) updatePayload.display_name = cleanedName;
-    if (typeof rank === "number") updatePayload.player_rank = rank;
+    if (shouldUpdateRank) updatePayload.player_rank = rank;
 
     const { data, error } = await supabase
       .from(TABLE_NAME)

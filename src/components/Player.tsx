@@ -14,9 +14,11 @@ const shootSound = new Audio("/single-shot.mp3");
 shootSound.volume = 0.6;
 
 const MUZZLE_FLASH_DURATION = 0.1;
-const RECOIL_BASE = 0.05;
+const RECOIL_BASE = 0.02;
 const RECOIL_DECAY = 7;
 const CAMERA_SHAKE_DECAY = 6;
+const CAMERA_SHAKE_STRENGTH_X = 0.05;
+const CAMERA_SHAKE_STRENGTH_Y = 0.035;
 
 export interface PlayerRef {
   shoot: () => void;
@@ -154,8 +156,8 @@ export const Player = forwardRef<PlayerRef, PlayerProps>(
 
       if (cameraShakeRef.current > 0) {
         const shake = cameraShakeRef.current;
-        camera.position.x += Math.sin(state.clock.elapsedTime * 48) * shake * 0.15;
-        camera.position.y += Math.cos(state.clock.elapsedTime * 52) * shake * 0.1;
+        camera.position.x += Math.sin(state.clock.elapsedTime * 48) * shake * CAMERA_SHAKE_STRENGTH_X;
+        camera.position.y += Math.cos(state.clock.elapsedTime * 52) * shake * CAMERA_SHAKE_STRENGTH_Y;
       }
 
       const cameraTarget = new THREE.Vector3(0, 0, -1)
@@ -261,8 +263,8 @@ export const Player = forwardRef<PlayerRef, PlayerProps>(
       muzzleFlashTimerRef.current = MUZZLE_FLASH_DURATION;
       flashStrengthRef.current = weapon.flashIntensity;
       const recoilKick = RECOIL_BASE * (weapon.damage / 18);
-      recoilRef.current = Math.min(recoilRef.current + recoilKick, 0.35);
-      cameraShakeRef.current = 0.01 + weapon.damage * 0.0003;
+      recoilRef.current = Math.min(recoilRef.current + recoilKick, 0.12);
+      cameraShakeRef.current = 0.004 + weapon.damage * 0.0001;
 
       if (muzzleFlashLightRef.current) {
         muzzleFlashLightRef.current.visible = true;
