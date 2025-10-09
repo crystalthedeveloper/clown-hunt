@@ -16,30 +16,17 @@ import { DieBoxes } from "./DieBoxes";
 import Scoreboard from "./Scoreboard";
 import { GameMenu } from "./GameMenu";
 import { useGameStore } from "../store/store";
-import { SupabasePlayerStats } from "../store/SupabasePlayerStats";
-import { SupabaseGuestProfiles } from "../store/SupabaseGuestProfiles";
-import { fetchLeaderboardSnapshot, syncTopKillers, LeaderboardSnapshotEntry } from "../store/SupabaseLeaderboard";
+import { syncTopKillers } from "../store/SupabaseLeaderboard";
 import { weaponConfigs } from "../config/weapons";
 import { GROUND_TOP } from "../config/world";
 
-interface GameCanvasProps {
-  user?: {
-    isGuest?: boolean;
-    email?: string;
-    id?: string;
-    fullName?: string;
-  };
-}
-
-function GameCanvas({ user }: GameCanvasProps) {
+function GameCanvas() {
   const playerRef = useRef<PlayerRef | null>(null);
   const bulletsRef = useRef<THREE.Mesh[]>([]);
-  const [saving, setSaving] = useState(false);
 
   const setCollectedLogos = useGameStore((state) => state.setCollectedLogos);
   const increaseKills = useGameStore((state) => state.increaseKills);
   const isGameOver = useGameStore((state) => state.isGameOver);
-  const gameResult = useGameStore((state) => state.gameResult);
   const setGameOver = useGameStore((state) => state.setGameOver);
   const resetGame = useGameStore((state) => state.resetGame);
   const setClownData = useGameStore((state) => state.setClownData);
@@ -344,73 +331,6 @@ function GameCanvas({ user }: GameCanvasProps) {
   const handleRestart = () => {
     initializeGame();
   };
-
-  const handleSaveGame = useCallback(async () => {
-    if (!gameResult || saving) return;
-
-    setSaving(true);
-    try {
-      const snapshot = await fetchLeaderboardSnapshot();
-      const { collectedLogos, kills } = useGameStore.getState();
-
-      const isGuestUser = user?.isGuest ?? false;
-      const userId = user?.id ?? null;
-      const lowerEmail = user?.email?.toLowerCase() ?? null;
-
-      const matchEntry = (entry: LeaderboardSnapshotEntry) =>
-        (isGuestUser && lowerEmail && entry.source === "guest" && entry.email?.toLowerCase() === lowerEmail) ||
-        (!isGuestUser && userId && entry.source === "player" && entry.userId === userId);
-
-      const existing = snapshot.find(matchEntry) ?? null;
-
-      const projectedList = [...snapshot];
-      if (existing) {
-        existing.kills = kills;
-      } else {
-        projectedList.push({
-          name: user?.fullName || (isGuestUser ? "Guest" : "Player"),
-          kills,
-          rank: 0,
-          source: isGuestUser ? "guest" : "player",
-          userId: userId ?? undefined,
-          email: user?.email ?? undefined,
-        });
-      }
-
-      projectedList.sort((a, b) => {
-        if (b.kills === a.kills) {
-          return a.name.localeCompare(b.name);
-        }
-        return b.kills - a.kills;
-      });
-
-      const newIndex = projectedList.findIndex(matchEntry);
-      const projectedRank = newIndex >= 0 ? newIndex + 1 : null;
-
-      if (isGuestUser && user?.email) {
-        await SupabaseGuestProfiles.updateKills(user.email, kills, user.fullName, projectedRank);
-      } else {
-        await SupabasePlayerStats.savePlayerStats(kills, collectedLogos, gameResult, projectedRank ?? undefined);
-      }
-    } catch (err) {
-      console.error("❌ Error saving game:", err);
-    } finally {
-      setSaving(false);
-    }
-  }, [gameResult, saving, user]);
-
-  const autoSavedRef = useRef(false);
-
-  useEffect(() => {
-    if (isGameOver && !autoSavedRef.current) {
-      autoSavedRef.current = true;
-      handleSaveGame();
-    }
-
-    if (!isGameOver) {
-      autoSavedRef.current = false;
-    }
-  }, [handleSaveGame, isGameOver]);
 
   if (isGameOver) {
     return (
