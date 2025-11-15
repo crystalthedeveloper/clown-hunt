@@ -11,7 +11,8 @@ Wave-based arena shooter where you battle an endless parade of murderous clowns,
 - **Wave system** – Increasingly aggressive clowns spawn every round with escalating health and speed.
 - **Power logos** – Collect logos each wave to unlock higher-tier weapons and damage bonuses.
 - **Reactive HUD** – In-game notifications, scoreboard, and minimal UI that responds to events.
-- **Leaderboards & profiles** – Supabase-backed authentication supports players and guests, tracking kills and ranking.
+- **Leaderboards & profiles** – AWS Lambda + DynamoDB endpoints persist WordPress player and guest progress plus the global leaderboard.
+- **Token-only authentication** – WordPress issues temporary player/guest tokens; the game auto-logs users in with no on-screen forms.
 - **Cross-device controls** – Desktop and touch-friendly virtual trackpad with accessible keyboard support.
 
 ---
@@ -34,7 +35,7 @@ Wave-based arena shooter where you battle an endless parade of murderous clowns,
 - **Frontend:** React 18, TypeScript, Vite
 - **3D & Physics:** @react-three/fiber, drei, cannon-es via @react-three/cannon
 - **State Management:** Zustand
-- **Backend:** Supabase (auth, profiles, leaderboards)
+- **Backend:** AWS Lambda + DynamoDB (profiles, guests, top 8 leaderboard)
 - **Tooling:** ESLint, npm scripts, Vite build pipeline
 
 ---
@@ -47,9 +48,9 @@ Wave-based arena shooter where you battle an endless parade of murderous clowns,
 │   ├── components/             # R3F scene objects, UI overlays, gameplay entities
 │   ├── config/                 # Gameplay tuning constants, weapon data
 │   ├── css/                    # Component-scoped stylesheets
-│   ├── store/                  # Zustand game store + Supabase helpers
+│   ├── store/                  # Zustand game store + AWS helpers
 │   └── main.tsx                # App bootstrap
-├── .env                        # Environment variables (Supabase keys, etc.)
+├── .env                        # Environment variables (AWS Lambda URLs, etc.)
 ├── vite.config.ts              # Vite + bundler configuration
 └── README.md
 ```
@@ -60,10 +61,15 @@ Wave-based arena shooter where you battle an endless parade of murderous clowns,
 
 - Node.js ≥ 18.0
 - npm ≥ 9 (bundled with Node 18+)
-- Supabase project with:
-  - `player_stats` table
-  - `guest_profiles` table
-  - RLS configured to allow anon access via the anon key used by the app
+- WordPress REST endpoints that issue 5-minute JSON tokens:
+  - `POST /wp-json/clownhunt/v1/validate_token`
+  - `POST /wp-json/clownhunt/v1/validate_guest_token`
+- AWS API Gateway / Lambda endpoints wired to DynamoDB tables:
+  - `save_player_profile` (POST)
+  - `load_player_profile` (POST)
+  - `save_guest_profile` (POST)
+  - `load_guest_profile` (POST)
+  - `leaderboard` (GET returning the global top 8)
 
 ---
 
@@ -78,10 +84,13 @@ Wave-based arena shooter where you battle an endless parade of murderous clowns,
 
 2. **Configure environment**
 
-   Create a `.env` file at the project root (or copy from `.env.example`) with your Supabase project keys:
+   Create a `.env` file at the project root (or copy from `.env.example`) that defines the Lambda endpoints:
    ```ini
-   VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
-   VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+   VITE_AWS_SAVE_PLAYER_PROFILE_URL=https://your-api/save_player_profile
+   VITE_AWS_LOAD_PLAYER_PROFILE_URL=https://your-api/load_player_profile
+   VITE_AWS_SAVE_GUEST_PROFILE_URL=https://your-api/save_guest_profile
+   VITE_AWS_LOAD_GUEST_PROFILE_URL=https://your-api/load_guest_profile
+   VITE_AWS_LEADERBOARD_URL=https://your-api/leaderboard
    ```
 
 3. **Run the dev server**
@@ -103,28 +112,47 @@ Wave-based arena shooter where you battle an endless parade of murderous clowns,
 
 ---
 
-## Supabase Tables (Expected Shape)
+## AWS Lambda Contracts
 
-`player_stats`
-```sql
-user_id uuid,
-first_name text,
-last_name text,
-kills int,
-player_rank int,
-created_at timestamptz
-```
+The frontend calls five Lambda-backed HTTP endpoints (API Gateway, CloudFront, etc.). Each one speaks JSON and should respond with `{ status: "success", ... }` when things go well.
 
-`guest_profiles`
-```sql
-id uuid,
-email text,
-display_name text,
-kills int,
-player_rank int
-```
+- **save_player_profile** (`POST`)<br/>
+  Request body: `{ user_id, email, first_name, last_name, kills, rank }`.<br/>
+  Persists WordPress player stats to the `player_profiles` table (PK: `user_id`).
 
-See `src/store/SupabasePlayerStats.ts`, `SupabaseGuestProfiles.ts`, and `SupabaseLeaderboard.ts` for exact queries and update flows.
+- **load_player_profile** (`POST`)<br/>
+  Request body: `{ user_id }`.<br/>
+  Response: `{ status, profile: { user_id, email, first_name, last_name, kills, rank } }`.
+
+- **save_guest_profile** (`POST`)<br/>
+  Request body: `{ guest_id, email, first_name, kills, rank }`.<br/>
+  Persists guest progress in the `guest_profiles` table (PK: `guest_id`).
+
+- **load_guest_profile** (`POST`)<br/>
+  Request body: `{ guest_id }`.<br/>
+  Response: `{ status, profile: { guest_id, email, first_name, kills, rank } }`.
+
+- **leaderboard** (`GET`)<br/>
+  Response: `{ status: "success", leaderboard: [ { id, type, first_name, kills, rank } ] }`. The list should already be sorted + limited to 8 results; the client renders them as-is.
+
+If an endpoint returns a non-2xx status or `status !== "success"`, the client logs the failure and falls back gracefully so gameplay can continue.
+
+---
+
+## Authentication Flow
+
+The standalone build never renders a username/password form. Instead, the WordPress site launches the game with one of two URL parameters:
+
+- `clownhunt_token` – identifies a logged-in WordPress user.
+- `clownhunt_guest_token` – identifies a guest session.
+
+On load the game:
+
+1. Calls the matching WordPress validation endpoint listed above.
+2. Uses the returned `user_id`/`guest_id` to fetch the latest stats from AWS.
+3. Stores the combined profile in `localStorage`, auto-logging the player.
+
+If no token is present, the game shows a message instructing the user to launch it from the main site.
 
 ---
 

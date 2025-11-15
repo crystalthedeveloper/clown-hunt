@@ -2,7 +2,7 @@
 // components/WelcomeScreen.tsx
 
 import React, { useEffect, useState } from "react";
-import { fetchLeaderboardSnapshot, LeaderboardSnapshotEntry } from "../store/SupabaseLeaderboard";
+import { loadLeaderboardAWS } from "../store/awsProfiles";
 import "../css/WelcomeScreen.css";
 
 interface WelcomeScreenProps {
@@ -31,25 +31,10 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart, onSignOut, userN
   useEffect(() => {
     let active = true;
     (async () => {
-      try {
-        const snapshot = await fetchLeaderboardSnapshot();
-        if (!active) return;
-
-        const ranked = snapshot
-          .filter((entry) => Number.isFinite(entry.kills))
-          .sort((a, b) => {
-            const rankA = typeof a.rank === "number" ? a.rank : Infinity;
-            const rankB = typeof b.rank === "number" ? b.rank : Infinity;
-            if (rankA !== rankB) return rankA - rankB;
-            return (b.kills ?? 0) - (a.kills ?? 0);
-          });
-
-        const topEntry: LeaderboardSnapshotEntry | undefined = ranked[0];
-        setTopKills(topEntry ? topEntry.kills : null);
-      } catch {
-        if (!active) return;
-        setTopKills(null);
-      }
+      const leaderboard = await loadLeaderboardAWS();
+      if (!active) return;
+      const topEntry = leaderboard[0];
+      setTopKills(topEntry ? topEntry.kills : null);
     })();
 
     return () => {

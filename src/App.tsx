@@ -1,8 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import WelcomeScreen from "./components/WelcomeScreen";
 import LoginScreen from "./components/LoginScreen";
-import { SupabaseAuth } from "./store/SupabaseAuth";
-import { getUserName } from "./store/supabaseHelpers";
+import type { AuthSuccessPayload, StoredGuestProfile, StoredPlayerProfile } from "./types/user";
 import "./App.css";
 
 interface User {
@@ -21,16 +20,33 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [gameStarted, setGameStarted] = useState(false);
 
-  // ✅ Initial session check (on mount)
   useEffect(() => {
-    async function fetchUser() {
+    function fetchUser() {
+      const storedPlayerRaw = localStorage.getItem("playerProfile");
+      if (storedPlayerRaw) {
+        try {
+          const storedPlayer: StoredPlayerProfile = JSON.parse(storedPlayerRaw);
+          setUser({
+            id: storedPlayer.id,
+            fullName: [storedPlayer.firstName, storedPlayer.lastName].filter(Boolean).join(" ").trim() || "Player",
+            email: storedPlayer.email,
+            isGuest: false,
+            kills: storedPlayer.kills ?? 0,
+          });
+          setLoading(false);
+          return;
+        } catch {
+          localStorage.removeItem("playerProfile");
+        }
+      }
+
       const storedGuest = localStorage.getItem("guestProfile");
       if (storedGuest) {
         try {
-          const guest = JSON.parse(storedGuest);
+          const guest: StoredGuestProfile = JSON.parse(storedGuest);
           setUser({
             id: guest.id,
-            fullName: guest.fullName || guest.display_name || "Player",
+            fullName: guest.fullName || "Player",
             email: guest.email,
             isGuest: true,
             kills: guest.kills ?? 0,
@@ -42,14 +58,6 @@ function App() {
         }
       }
 
-      const loggedInUser = await SupabaseAuth.getUser();
-      if (loggedInUser) {
-        const fullName = await getUserName();
-        setUser({
-          id: loggedInUser.id,
-          fullName: fullName || "Player",
-        });
-      }
       setLoading(false);
     }
 
@@ -76,32 +84,25 @@ function App() {
     };
   }, []);
 
-  // ✅ After login, update user + skip reload
-  interface AuthSuccessPayload {
-    id: string;
-    fullName?: string;
-    email?: string;
-    isGuest?: boolean;
-    kills?: number;
-  }
-
-  const handleLoginSuccess = async (supabaseUser: AuthSuccessPayload) => {
-    if (supabaseUser?.isGuest) {
+  const handleLoginSuccess = (payload: AuthSuccessPayload) => {
+    if (payload?.isGuest) {
       setUser({
-        id: supabaseUser.id,
-        fullName: supabaseUser.fullName || "Player",
-        email: supabaseUser.email,
+        id: payload.id,
+        fullName: payload.fullName || "Player",
+        email: payload.email,
         isGuest: true,
-        kills: supabaseUser.kills ?? 0,
+        kills: payload.kills ?? 0,
       });
       return;
     }
 
-    const fullName = await getUserName();
     localStorage.removeItem("guestProfile");
     setUser({
-      id: supabaseUser.id,
-      fullName: fullName || "Player",
+      id: payload.id,
+      fullName: payload.fullName || "Player",
+      email: payload.email,
+      isGuest: false,
+      kills: payload.kills ?? 0,
     });
   };
 
@@ -113,8 +114,7 @@ function App() {
       return;
     }
 
-    await SupabaseAuth.signOut();
-    localStorage.removeItem("guestProfile");
+    localStorage.removeItem("playerProfile");
     setUser(null);
     setGameStarted(false);
   };

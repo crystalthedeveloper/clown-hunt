@@ -1,10 +1,12 @@
 // components/GameMenu.tsx
 import { useEffect, useState } from "react";
 import { useGameStore } from "../store/store";
-import { SupabaseGuestProfiles } from "../store/SupabaseGuestProfiles";
-import { SupabasePlayerStats } from "../store/SupabasePlayerStats";
-import { SupabaseAuth } from "../store/SupabaseAuth";
-import { fetchLeaderboardSnapshot, LeaderboardSnapshotEntry } from "../store/SupabaseLeaderboard";
+import type { StoredGuestProfile, StoredPlayerProfile } from "../types/user";
+import {
+  loadLeaderboardAWS,
+  saveGuestStatsAWS,
+  savePlayerStatsAWS,
+} from "../store/awsProfiles";
 import "../css/GameMenu.css";
 
 interface GameMenuProps {
@@ -26,58 +28,81 @@ export function GameMenu({
   const [projectedRank, setProjectedRank] = useState<number | null>(null);
   const [loadingRank, setLoadingRank] = useState(false);
   const { kills } = useGameStore.getState();
-  const userDataRaw = localStorage.getItem("guestProfile");
-  const guestProfile = userDataRaw ? JSON.parse(userDataRaw) : null;
-  const isGuest = Boolean(guestProfile);
-  const userName = guestProfile?.fullName || null;
-  const playerEmail = guestProfile?.email ?? null;
+  const guestProfileRaw = localStorage.getItem("guestProfile");
+  const playerProfileRaw = localStorage.getItem("playerProfile");
+
+  const guestProfile: StoredGuestProfile | null = guestProfileRaw
+    ? (() => {
+        try {
+          return JSON.parse(guestProfileRaw);
+        } catch {
+          localStorage.removeItem("guestProfile");
+          return null;
+        }
+      })()
+    : null;
+
+  const playerProfile: StoredPlayerProfile | null = playerProfileRaw
+    ? (() => {
+        try {
+          return JSON.parse(playerProfileRaw);
+        } catch {
+          localStorage.removeItem("playerProfile");
+          return null;
+        }
+      })()
+    : null;
+
+  const isGuest = Boolean(!playerProfile && guestProfile);
+  const profileId = playerProfile?.id ?? guestProfile?.id ?? null;
+  const userName = playerProfile
+    ? [playerProfile.firstName, playerProfile.lastName].filter(Boolean).join(" ").trim() || "Player"
+    : guestProfile?.fullName || null;
+  const userType: "player" | "guest" = playerProfile ? "player" : "guest";
 
   useEffect(() => {
     let cancelled = false;
     if (!isVisible) return;
+    if (!profileId) {
+      setCurrentRank(null);
+      setProjectedRank(null);
+      return;
+    }
 
     const loadRanks = async () => {
       setLoadingRank(true);
       try {
-        const [snapshot, authUser] = await Promise.all([
-          fetchLeaderboardSnapshot(),
-          isGuest ? Promise.resolve(null) : SupabaseAuth.getUser(),
-        ]);
+        const leaderboard = await loadLeaderboardAWS();
 
         if (cancelled) return;
 
-        const userId = authUser?.id ?? null;
-        const lowerEmail = playerEmail?.toLowerCase() ?? null;
+        const matchEntry = (entry: typeof leaderboard[number]) =>
+          entry.type === userType && entry.id === profileId;
 
-        const matchEntry = (entry: LeaderboardSnapshotEntry) =>
-          (lowerEmail && entry.source === "guest" && entry.email?.toLowerCase() === lowerEmail) ||
-          (userId && entry.source === "player" && entry.userId === userId);
-
-        const existing = snapshot.find(matchEntry) ?? null;
+        const rankedEntries = leaderboard.map((entry) => ({ ...entry }));
+        const existing = rankedEntries.find(matchEntry) ?? null;
         setCurrentRank(existing?.rank ?? null);
 
-        const projectedList = [...snapshot];
         if (existing) {
           existing.kills = kills;
         } else {
-          projectedList.push({
+          rankedEntries.push({
+            id: profileId,
+            type: userType,
             name: userName || (isGuest ? "Guest" : "Player"),
             kills,
             rank: 0,
-            source: isGuest ? "guest" : "player",
-            userId: userId ?? undefined,
-            email: playerEmail ?? undefined,
           });
         }
 
-        projectedList.sort((a, b) => {
+        rankedEntries.sort((a, b) => {
           if (b.kills === a.kills) {
             return a.name.localeCompare(b.name);
           }
           return b.kills - a.kills;
         });
 
-        const newIndex = projectedList.findIndex(matchEntry);
+        const newIndex = rankedEntries.findIndex(matchEntry);
         setProjectedRank(newIndex >= 0 ? newIndex + 1 : null);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -96,7 +121,7 @@ export function GameMenu({
     return () => {
       cancelled = true;
     };
-  }, [isVisible, kills, isGuest, playerEmail, userName]);
+  }, [isVisible, kills, isGuest, profileId, userName, userType]);
 
   if (!isVisible) return null;
 
@@ -105,22 +130,36 @@ export function GameMenu({
     setError("");
     try {
       const targetRank = projectedRank ?? currentRank ?? null;
-      if (isGuest && guestProfile?.email) {
-        const updatedProfile = await SupabaseGuestProfiles.updateKills(
-          guestProfile.email,
+      if (isGuest && guestProfile) {
+        await saveGuestStatsAWS({
+          guest_id: guestProfile.id,
+          email: guestProfile.email,
+          first_name: userName ?? "Guest",
           kills,
-          userName ?? undefined,
-          targetRank
-        );
-        const updated = {
+          rank: targetRank ?? undefined,
+        });
+        const updated: StoredGuestProfile = {
           ...guestProfile,
-          fullName: updatedProfile.display_name ?? guestProfile.fullName,
-          kills: updatedProfile.kills ?? guestProfile.kills ?? kills,
-          player_rank: updatedProfile.player_rank ?? targetRank,
+          fullName: userName ?? guestProfile.fullName,
+          kills,
+          rank: targetRank ?? guestProfile.rank ?? null,
         };
         localStorage.setItem("guestProfile", JSON.stringify(updated));
-      } else {
-        await SupabasePlayerStats.savePlayerStats(kills, 0, "lose", targetRank ?? undefined);
+      } else if (playerProfile) {
+        await savePlayerStatsAWS({
+          user_id: playerProfile.id,
+          email: playerProfile.email,
+          first_name: playerProfile.firstName,
+          last_name: playerProfile.lastName,
+          kills,
+          rank: targetRank ?? undefined,
+        });
+        const updated: StoredPlayerProfile = {
+          ...playerProfile,
+          kills,
+          rank: targetRank ?? playerProfile.rank ?? null,
+        };
+        localStorage.setItem("playerProfile", JSON.stringify(updated));
       }
       if (typeof targetRank === "number") {
         setStatus(`Progress saved. Ranked #${targetRank}.`);
@@ -143,7 +182,7 @@ export function GameMenu({
       return;
     }
 
-    await SupabaseAuth.signOut();
+    localStorage.removeItem("playerProfile");
     window.location.reload();
   };
 

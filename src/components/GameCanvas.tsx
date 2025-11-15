@@ -16,7 +16,7 @@ import { DieBoxes } from "./DieBoxes";
 import Scoreboard from "./Scoreboard";
 import { GameMenu } from "./GameMenu";
 import { useGameStore } from "../store/store";
-import { syncTopKillers } from "../store/SupabaseLeaderboard";
+import { loadLeaderboardAWS } from "../store/awsProfiles";
 import { weaponConfigs } from "../config/weapons";
 import { GROUND_TOP } from "../config/world";
 
@@ -250,7 +250,7 @@ function GameCanvas() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const entries = await syncTopKillers(3);
+      const entries = await loadLeaderboardAWS();
       if (!active) return;
 
       const fallbackKills = [150, 100, 60];
