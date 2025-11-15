@@ -35,8 +35,18 @@ const JSON_HEADERS = {
   "Content-Type": "application/json",
 };
 
+const WORDPRESS_API_BASE = (import.meta.env.VITE_WORDPRESS_API_BASE || "").replace(/\/$/, "");
+
+function buildWordpressUrl(path: string) {
+  const base = WORDPRESS_API_BASE;
+  if (!base) {
+    throw new Error("WordPress API base URL is not configured.");
+  }
+  return `${base}${path}`;
+}
+
 async function validatePlayerToken(token: string): Promise<PlayerTokenResult> {
-  const response = await fetch("/wp-json/clownhunt/v1/validate_token", {
+  const response = await fetch(buildWordpressUrl("/wp-json/clownhunt/v1/validate_token"), {
     method: "POST",
     headers: JSON_HEADERS,
     body: JSON.stringify({ token }),
@@ -49,7 +59,7 @@ async function validatePlayerToken(token: string): Promise<PlayerTokenResult> {
 }
 
 async function validateGuestToken(token: string): Promise<GuestTokenResult> {
-  const response = await fetch("/wp-json/clownhunt/v1/validate_guest_token", {
+  const response = await fetch(buildWordpressUrl("/wp-json/clownhunt/v1/validate_guest_token"), {
     method: "POST",
     headers: JSON_HEADERS,
     body: JSON.stringify({ token }),

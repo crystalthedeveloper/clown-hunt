@@ -84,13 +84,14 @@ Wave-based arena shooter where you battle an endless parade of murderous clowns,
 
 2. **Configure environment**
 
-   Create a `.env` file at the project root (or copy from `.env.example`) that defines the Lambda endpoints:
+   Create a `.env` file at the project root (or copy from `.env.example`) that defines the Lambda endpoints and WordPress API base:
    ```ini
    VITE_AWS_SAVE_PLAYER_PROFILE_URL=https://your-api/save_player_profile
    VITE_AWS_LOAD_PLAYER_PROFILE_URL=https://your-api/load_player_profile
    VITE_AWS_SAVE_GUEST_PROFILE_URL=https://your-api/save_guest_profile
    VITE_AWS_LOAD_GUEST_PROFILE_URL=https://your-api/load_guest_profile
    VITE_AWS_LEADERBOARD_URL=https://your-api/leaderboard
+    VITE_WORDPRESS_API_BASE=https://your-wordpress-site.com
    ```
 
 3. **Run the dev server**
