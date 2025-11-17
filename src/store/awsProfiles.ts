@@ -66,11 +66,11 @@ type GuestProfileResponse = AwsProfileResponse<GuestProfileResult> &
   Partial<GuestProfileResult>;
 
 const AWS_ENDPOINTS = {
-  savePlayerProfile: import.meta.env.VITE_AWS_SAVE_PLAYER_PROFILE_URL,
-  loadPlayerProfile: import.meta.env.VITE_AWS_LOAD_PLAYER_PROFILE_URL,
-  saveGuestProfile: import.meta.env.VITE_AWS_SAVE_GUEST_PROFILE_URL,
-  loadGuestProfile: import.meta.env.VITE_AWS_LOAD_GUEST_PROFILE_URL,
-  leaderboard: import.meta.env.VITE_AWS_LEADERBOARD_URL,
+  savePlayerProfile: "https://1rdfzd1e59.execute-api.ca-central-1.amazonaws.com/prod/save_player_profile",
+  loadPlayerProfile: "https://1rdfzd1e59.execute-api.ca-central-1.amazonaws.com/prod/load_player_profile",
+  saveGuestProfile: "https://1rdfzd1e59.execute-api.ca-central-1.amazonaws.com/prod/save_guest_profile",
+  loadGuestProfile: "https://1rdfzd1e59.execute-api.ca-central-1.amazonaws.com/prod/load_guest_profile",
+  leaderboard: "https://1rdfzd1e59.execute-api.ca-central-1.amazonaws.com/prod/leaderboard",
 };
 
 const JSON_HEADERS = {

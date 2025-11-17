@@ -20,18 +20,11 @@ import { loadLeaderboardAWS } from "../store/awsProfiles";
 import { weaponConfigs } from "../config/weapons";
 import { GROUND_TOP } from "../config/world";
 
-const PLAYER_PROFILE_URL = "https://my-api.com/load_player_profile";
-const LEADERBOARD_URL = "https://my-api.com/leaderboard";
+const PLAYER_PROFILE_URL =
+  "https://1rdfzd1e59.execute-api.ca-central-1.amazonaws.com/prod/load_player_profile";
 const JSON_HEADERS = {
   "Content-Type": "application/json",
 };
-
-interface LeaderboardPlayerEntry {
-  user_id?: string | number;
-  id?: string | number;
-  kills?: number;
-  rank?: number;
-}
 
 interface GameCanvasProps {
   userId?: string;
@@ -81,15 +74,17 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
   const [notifications, setNotifications] = useState<{ id: number; message: string }[]>([]);
   const notificationTimeoutsRef = useRef<Map<number, number>>(new Map());
   const setBulletLevel = useGameStore((state) => state.setBulletLevel);
-  const liveKills = useGameStore((state) => state.kills);
   const [blackBoxPositions, setBlackBoxPositions] = useState<[number, number, number][]>([]);
   const [dieBoxPositions, setDieBoxPositions] = useState<[number, number, number][]>([]);
   const [movableBoxPositions, setMovableBoxPositions] = useState<[number, number, number][]>([]);
-  const [playerRank, setPlayerRank] = useState(0);
+  const [playerHudStats, setPlayerHudStats] = useState<{ kills: number; rank: number }>({
+    kills: 0,
+    rank: 0,
+  });
 
   useEffect(() => {
     if (!userId || isGuest) {
-      setPlayerRank(0);
+      setPlayerHudStats({ kills: 0, rank: 0 });
       return;
     }
 
@@ -105,35 +100,18 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
         if (!profileRes.ok) {
           throw new Error(`Profile request failed (${profileRes.status})`);
         }
-        const profile = await profileRes.json();
-
-        const leaderboardRes = await fetch(LEADERBOARD_URL);
-        if (!leaderboardRes.ok) {
-          throw new Error(`Leaderboard request failed (${leaderboardRes.status})`);
-        }
-        const leaderboard = await leaderboardRes.json();
-        const players: LeaderboardPlayerEntry[] = Array.isArray(leaderboard?.players)
-          ? leaderboard.players
-          : Array.isArray(leaderboard?.leaderboard)
-          ? leaderboard.leaderboard
-          : Array.isArray(leaderboard)
-          ? leaderboard
-          : [];
-
-        const myEntry =
-          players.find(
-            (entry) => String(entry?.user_id ?? entry?.id ?? "") === String(userId),
-          ) ?? null;
-
-        const rank = myEntry ? Number(myEntry.rank) || 0 : Number(profile?.rank) || 0;
+        const payload = await profileRes.json();
+        const profile = payload?.profile ?? payload ?? {};
+        const kills = Number(profile?.kills) || 0;
+        const rank = Number(profile?.rank) || 0;
 
         if (!cancelled) {
-          setPlayerRank(rank);
+          setPlayerHudStats({ kills, rank });
         }
       } catch (error) {
         console.error("Failed to load player HUD stats:", error);
         if (!cancelled) {
-          setPlayerRank(0);
+          setPlayerHudStats({ kills: 0, rank: 0 });
         }
       }
     };
@@ -419,7 +397,7 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           onVisitPortfolio={() => {
             window.open("https://www.crystalthedeveloper.ca", "_blank");
           }}
-          playerRank={playerRank}
+          playerRank={playerHudStats.rank}
         />
       );
   }
@@ -438,7 +416,7 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           ))}
         </div>
       )}
-      <Scoreboard kills={liveKills} rank={playerRank} />
+      <Scoreboard kills={playerHudStats.kills} rank={playerHudStats.rank} />
       <Canvas shadows camera={{ position: [0, 10, 25], fov: 50 }} style={{ height: "100%", width: "100%" }}>
         <Suspense fallback={<Html center>Loading...</Html>}>
           <color attach="background" args={["#000000"]} />
