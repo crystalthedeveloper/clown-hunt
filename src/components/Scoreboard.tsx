@@ -1,20 +1,24 @@
 // components/Scoreboard.tsx
+import { useGameStore } from "../store/store";
 import "../css/Scoreboard.css";
 
 interface ScoreboardProps {
-  kills: number;
-  rank?: number;
+  rank?: number | null;
 }
 
-const Scoreboard = ({ kills, rank = 0 }: ScoreboardProps) => (
-  <div className="scoreboard">
-    <div className="scoreboard-text">
-      Kills: <div className="scoreboard-number">{kills}</div>
+const Scoreboard = ({ rank = 0 }: ScoreboardProps) => {
+  const kills = useGameStore((state) => state.kills);
+
+  return (
+    <div className="scoreboard">
+      <div className="scoreboard-text">
+        Kills: <div className="scoreboard-number">{kills}</div>
+      </div>
+      <div className="scoreboard-text">
+        Rank: <div className="scoreboard-number">{rank}</div>
+      </div>
     </div>
-    <div className="scoreboard-text">
-      Rank: <div className="scoreboard-number">{rank}</div>
-    </div>
-  </div>
-);
+  );
+};
 
 export default Scoreboard;

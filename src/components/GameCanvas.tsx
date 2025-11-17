@@ -77,14 +77,11 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
   const [blackBoxPositions, setBlackBoxPositions] = useState<[number, number, number][]>([]);
   const [dieBoxPositions, setDieBoxPositions] = useState<[number, number, number][]>([]);
   const [movableBoxPositions, setMovableBoxPositions] = useState<[number, number, number][]>([]);
-  const [playerHudStats, setPlayerHudStats] = useState<{ kills: number; rank: number }>({
-    kills: 0,
-    rank: 0,
-  });
+  const [playerRank, setPlayerRank] = useState<number | null>(null);
 
   useEffect(() => {
     if (!userId || isGuest) {
-      setPlayerHudStats({ kills: 0, rank: 0 });
+      setPlayerRank(null);
       return;
     }
 
@@ -102,16 +99,15 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
         }
         const payload = await profileRes.json();
         const profile = payload?.profile ?? payload ?? {};
-        const kills = Number(profile?.kills) || 0;
         const rank = Number(profile?.rank) || 0;
 
         if (!cancelled) {
-          setPlayerHudStats({ kills, rank });
+          setPlayerRank(rank);
         }
       } catch (error) {
         console.error("Failed to load player HUD stats:", error);
         if (!cancelled) {
-          setPlayerHudStats({ kills: 0, rank: 0 });
+          setPlayerRank(0);
         }
       }
     };
@@ -397,7 +393,7 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           onVisitPortfolio={() => {
             window.open("https://www.crystalthedeveloper.ca", "_blank");
           }}
-          playerRank={playerHudStats.rank}
+          playerRank={playerRank}
         />
       );
   }
@@ -416,7 +412,7 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           ))}
         </div>
       )}
-      <Scoreboard kills={playerHudStats.kills} rank={playerHudStats.rank} />
+      <Scoreboard rank={playerRank ?? 0} />
       <Canvas shadows camera={{ position: [0, 10, 25], fov: 50 }} style={{ height: "100%", width: "100%" }}>
         <Suspense fallback={<Html center>Loading...</Html>}>
           <color attach="background" args={["#000000"]} />

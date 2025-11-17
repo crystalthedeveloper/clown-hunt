@@ -14,7 +14,7 @@ interface GameMenuProps {
   onRestart: () => void;
   isVisible: boolean;
   onVisitPortfolio: () => void;
-  playerRank?: number;
+  playerRank?: number | null;
 }
 
 export function GameMenu({
@@ -29,7 +29,7 @@ export function GameMenu({
   const [currentRank, setCurrentRank] = useState<number | null>(null);
   const [projectedRank, setProjectedRank] = useState<number | null>(null);
   const [loadingRank, setLoadingRank] = useState(false);
-  const { kills } = useGameStore.getState();
+  const kills = useGameStore((state) => state.kills);
   const guestProfileRaw = localStorage.getItem("guestProfile");
   const playerProfileRaw = localStorage.getItem("playerProfile");
 
@@ -62,7 +62,8 @@ export function GameMenu({
     : guestProfile?.fullName || null;
   const userType: "player" | "guest" = playerProfile ? "player" : "guest";
 
-  const playerRankOverride = typeof playerRank === "number" ? playerRank : null;
+  const playerRankOverride =
+    typeof playerRank === "number" && Number.isFinite(playerRank) ? playerRank : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -85,7 +86,7 @@ export function GameMenu({
 
         const rankedEntries = leaderboard.map((entry) => ({ ...entry }));
         const existing = rankedEntries.find(matchEntry) ?? null;
-        setCurrentRank(existing?.rank ?? null);
+        setCurrentRank(existing?.rank ?? playerRankOverride ?? null);
 
         if (existing) {
           existing.kills = kills;
@@ -125,7 +126,7 @@ export function GameMenu({
     return () => {
       cancelled = true;
     };
-  }, [isVisible, kills, isGuest, profileId, userName, userType]);
+  }, [isVisible, kills, isGuest, profileId, userName, userType, playerRankOverride]);
 
   useEffect(() => {
     if (playerRankOverride !== null) {
