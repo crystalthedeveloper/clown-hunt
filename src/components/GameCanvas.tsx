@@ -20,6 +20,19 @@ import { loadLeaderboardAWS } from "../store/awsProfiles";
 import { weaponConfigs } from "../config/weapons";
 import { GROUND_TOP } from "../config/world";
 
+const PLAYER_PROFILE_URL = "https://my-api.com/load_player_profile";
+const LEADERBOARD_URL = "https://my-api.com/leaderboard";
+const JSON_HEADERS = {
+  "Content-Type": "application/json",
+};
+
+interface LeaderboardPlayerEntry {
+  user_id?: string | number;
+  id?: string | number;
+  kills?: number;
+  rank?: number;
+}
+
 interface GameCanvasProps {
   userId?: string;
   isGuest?: boolean;
@@ -68,9 +81,11 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
   const [notifications, setNotifications] = useState<{ id: number; message: string }[]>([]);
   const notificationTimeoutsRef = useRef<Map<number, number>>(new Map());
   const setBulletLevel = useGameStore((state) => state.setBulletLevel);
+  const liveKills = useGameStore((state) => state.kills);
   const [blackBoxPositions, setBlackBoxPositions] = useState<[number, number, number][]>([]);
   const [dieBoxPositions, setDieBoxPositions] = useState<[number, number, number][]>([]);
   const [movableBoxPositions, setMovableBoxPositions] = useState<[number, number, number][]>([]);
+  const [playerStats, setPlayerStats] = useState<{ kills: number; rank: number }>({ kills: 0, rank: 0 });
 
   const getHealthRangeForWave = useCallback((wave: number): [number, number] => {
     if (wave >= 5) {
@@ -338,16 +353,17 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
   };
 
   if (isGameOver) {
-    return (
-      <GameMenu
-        title="💀 Game Over!"
-        onRestart={handleRestart}
-        isVisible={true}
-        onVisitPortfolio={() => {
-          window.open("https://www.crystalthedeveloper.ca", "_blank");
-        }}
-      />
-    );
+      return (
+        <GameMenu
+          title="💀 Game Over!"
+          onRestart={handleRestart}
+          isVisible={true}
+          onVisitPortfolio={() => {
+            window.open("https://www.crystalthedeveloper.ca", "_blank");
+          }}
+          playerStats={playerStats}
+        />
+      );
   }
 
   const detectionRadius = Math.max(6, 14 - (currentWave - 1) * 1.1);
@@ -364,7 +380,7 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           ))}
         </div>
       )}
-      <Scoreboard userId={userId} isGuest={isGuest} />
+      <Scoreboard kills={playerStats.kills} rank={playerStats.rank} />
       <Canvas shadows camera={{ position: [0, 10, 25], fov: 50 }} style={{ height: "100%", width: "100%" }}>
         <Suspense fallback={<Html center>Loading...</Html>}>
           <color attach="background" args={["#000000"]} />
@@ -429,3 +445,66 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
 }
 
 export default GameCanvas;
+  useEffect(() => {
+    if (!userId || isGuest) {
+      setPlayerStats({ kills: liveKills, rank: 0 });
+    }
+  }, [isGuest, liveKills, userId]);
+
+  useEffect(() => {
+    if (!userId || isGuest) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPlayerStats = async () => {
+      try {
+        const profileRes = await fetch(PLAYER_PROFILE_URL, {
+          method: "POST",
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ user_id: userId }),
+        });
+        if (!profileRes.ok) {
+          throw new Error(`Profile request failed (${profileRes.status})`);
+        }
+        const profile = await profileRes.json();
+
+        const leaderboardRes = await fetch(LEADERBOARD_URL);
+        if (!leaderboardRes.ok) {
+          throw new Error(`Leaderboard request failed (${leaderboardRes.status})`);
+        }
+        const leaderboard = await leaderboardRes.json();
+        const players: LeaderboardPlayerEntry[] = Array.isArray(leaderboard?.players)
+          ? leaderboard.players
+          : Array.isArray(leaderboard?.leaderboard)
+          ? leaderboard.leaderboard
+          : Array.isArray(leaderboard)
+          ? leaderboard
+          : [];
+
+        const myEntry =
+          players.find(
+            (entry) => String(entry?.user_id ?? entry?.id ?? "") === String(userId),
+          ) ?? null;
+
+        const kills = Number(profile?.kills) || 0;
+        const rank = myEntry ? Number(myEntry.rank) || 0 : Number(profile?.rank) || 0;
+
+        if (!cancelled) {
+          setPlayerStats({ kills, rank });
+        }
+      } catch (error) {
+        console.error("Failed to load player HUD stats:", error);
+        if (!cancelled) {
+          setPlayerStats({ kills: 0, rank: 0 });
+        }
+      }
+    };
+
+    loadPlayerStats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isGuest, userId]);

@@ -14,6 +14,10 @@ interface GameMenuProps {
   onRestart: () => void;
   isVisible: boolean;
   onVisitPortfolio: () => void;
+  playerStats?: {
+    kills?: number;
+    rank?: number;
+  };
 }
 
 export function GameMenu({
@@ -21,6 +25,7 @@ export function GameMenu({
   onRestart,
   isVisible,
   onVisitPortfolio,
+  playerStats,
 }: GameMenuProps) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -59,6 +64,9 @@ export function GameMenu({
     ? [playerProfile.firstName, playerProfile.lastName].filter(Boolean).join(" ").trim() || "Player"
     : guestProfile?.fullName || null;
   const userType: "player" | "guest" = playerProfile ? "player" : "guest";
+
+  const playerStatsRank =
+    typeof playerStats?.rank === "number" ? playerStats.rank : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +130,12 @@ export function GameMenu({
       cancelled = true;
     };
   }, [isVisible, kills, isGuest, profileId, userName, userType]);
+
+  useEffect(() => {
+    if (playerStatsRank !== null) {
+      setCurrentRank(playerStatsRank);
+    }
+  }, [playerStatsRank]);
 
   if (!isVisible) return null;
 
