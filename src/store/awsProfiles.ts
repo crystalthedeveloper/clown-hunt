@@ -60,6 +60,11 @@ interface AwsProfileResponse<T> {
   message?: string;
 }
 
+type PlayerProfileResponse = AwsProfileResponse<PlayerProfileResult> &
+  Partial<PlayerProfileResult>;
+type GuestProfileResponse = AwsProfileResponse<GuestProfileResult> &
+  Partial<GuestProfileResult>;
+
 const AWS_ENDPOINTS = {
   savePlayerProfile: import.meta.env.VITE_AWS_SAVE_PLAYER_PROFILE_URL,
   loadPlayerProfile: import.meta.env.VITE_AWS_LOAD_PLAYER_PROFILE_URL,
@@ -130,15 +135,16 @@ export async function loadPlayerStatsAWS(userId: string): Promise<PlayerProfileR
   if (!url) return null;
 
   try {
-    const result = await postJson<AwsProfileResponse<PlayerProfileResult>>(url, { user_id: userId });
-    if (result.status === "success" && result.profile) {
+    const result = await postJson<PlayerProfileResponse>(url, { user_id: userId });
+    const profile = result.profile ?? result;
+    if (result.status === "success" && profile?.user_id) {
       return {
-        user_id: result.profile.user_id,
-        email: result.profile.email ?? null,
-        first_name: result.profile.first_name ?? null,
-        last_name: result.profile.last_name ?? null,
-        kills: result.profile.kills ?? 0,
-        rank: typeof result.profile.rank === "number" ? result.profile.rank : null,
+        user_id: profile.user_id,
+        email: profile.email ?? null,
+        first_name: profile.first_name ?? null,
+        last_name: profile.last_name ?? null,
+        kills: profile.kills ?? 0,
+        rank: typeof profile.rank === "number" ? profile.rank : null,
       };
     }
     return null;
@@ -170,14 +176,15 @@ export async function loadGuestStatsAWS(guestId: string): Promise<GuestProfileRe
   if (!url) return null;
 
   try {
-    const result = await postJson<AwsProfileResponse<GuestProfileResult>>(url, { guest_id: guestId });
-    if (result.status === "success" && result.profile) {
+    const result = await postJson<GuestProfileResponse>(url, { guest_id: guestId });
+    const profile = result.profile ?? result;
+    if (result.status === "success" && profile?.guest_id) {
       return {
-        guest_id: result.profile.guest_id,
-        email: result.profile.email ?? null,
-        first_name: result.profile.first_name ?? null,
-        kills: result.profile.kills ?? 0,
-        rank: typeof result.profile.rank === "number" ? result.profile.rank : null,
+        guest_id: profile.guest_id,
+        email: profile.email ?? null,
+        first_name: profile.first_name ?? null,
+        kills: profile.kills ?? 0,
+        rank: typeof profile.rank === "number" ? profile.rank : null,
       };
     }
     return null;
