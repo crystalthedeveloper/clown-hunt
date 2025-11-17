@@ -136,7 +136,7 @@ function App() {
         />
       ) : (
         <Suspense fallback={<div className="app__loading">Launching arena...</div>}>
-          <GameCanvas />
+          <GameCanvas userId={user.id} isGuest={user.isGuest} />
         </Suspense>
       )}
     </>

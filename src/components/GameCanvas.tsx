@@ -20,7 +20,12 @@ import { loadLeaderboardAWS } from "../store/awsProfiles";
 import { weaponConfigs } from "../config/weapons";
 import { GROUND_TOP } from "../config/world";
 
-function GameCanvas() {
+interface GameCanvasProps {
+  userId?: string;
+  isGuest?: boolean;
+}
+
+function GameCanvas({ userId, isGuest }: GameCanvasProps) {
   const playerRef = useRef<PlayerRef | null>(null);
   const bulletsRef = useRef<THREE.Mesh[]>([]);
 
@@ -359,7 +364,7 @@ function GameCanvas() {
           ))}
         </div>
       )}
-      <Scoreboard />
+      <Scoreboard userId={userId} isGuest={isGuest} />
       <Canvas shadows camera={{ position: [0, 10, 25], fov: 50 }} style={{ height: "100%", width: "100%" }}>
         <Suspense fallback={<Html center>Loading...</Html>}>
           <color attach="background" args={["#000000"]} />
