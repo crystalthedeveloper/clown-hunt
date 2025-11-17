@@ -85,7 +85,65 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
   const [blackBoxPositions, setBlackBoxPositions] = useState<[number, number, number][]>([]);
   const [dieBoxPositions, setDieBoxPositions] = useState<[number, number, number][]>([]);
   const [movableBoxPositions, setMovableBoxPositions] = useState<[number, number, number][]>([]);
-  const [playerStats, setPlayerStats] = useState<{ kills: number; rank: number }>({ kills: 0, rank: 0 });
+  const [playerRank, setPlayerRank] = useState(0);
+
+  useEffect(() => {
+    if (!userId || isGuest) {
+      setPlayerRank(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPlayerStats = async () => {
+      try {
+        const profileRes = await fetch(PLAYER_PROFILE_URL, {
+          method: "POST",
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ user_id: userId }),
+        });
+        if (!profileRes.ok) {
+          throw new Error(`Profile request failed (${profileRes.status})`);
+        }
+        const profile = await profileRes.json();
+
+        const leaderboardRes = await fetch(LEADERBOARD_URL);
+        if (!leaderboardRes.ok) {
+          throw new Error(`Leaderboard request failed (${leaderboardRes.status})`);
+        }
+        const leaderboard = await leaderboardRes.json();
+        const players: LeaderboardPlayerEntry[] = Array.isArray(leaderboard?.players)
+          ? leaderboard.players
+          : Array.isArray(leaderboard?.leaderboard)
+          ? leaderboard.leaderboard
+          : Array.isArray(leaderboard)
+          ? leaderboard
+          : [];
+
+        const myEntry =
+          players.find(
+            (entry) => String(entry?.user_id ?? entry?.id ?? "") === String(userId),
+          ) ?? null;
+
+        const rank = myEntry ? Number(myEntry.rank) || 0 : Number(profile?.rank) || 0;
+
+        if (!cancelled) {
+          setPlayerRank(rank);
+        }
+      } catch (error) {
+        console.error("Failed to load player HUD stats:", error);
+        if (!cancelled) {
+          setPlayerRank(0);
+        }
+      }
+    };
+
+    loadPlayerStats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isGuest, userId]);
 
   const getHealthRangeForWave = useCallback((wave: number): [number, number] => {
     if (wave >= 5) {
@@ -361,7 +419,7 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           onVisitPortfolio={() => {
             window.open("https://www.crystalthedeveloper.ca", "_blank");
           }}
-          playerStats={playerStats}
+          playerRank={playerRank}
         />
       );
   }
@@ -380,7 +438,7 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           ))}
         </div>
       )}
-      <Scoreboard kills={playerStats.kills} rank={playerStats.rank} />
+      <Scoreboard kills={liveKills} rank={playerRank} />
       <Canvas shadows camera={{ position: [0, 10, 25], fov: 50 }} style={{ height: "100%", width: "100%" }}>
         <Suspense fallback={<Html center>Loading...</Html>}>
           <color attach="background" args={["#000000"]} />
@@ -445,66 +503,3 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
 }
 
 export default GameCanvas;
-  useEffect(() => {
-    if (!userId || isGuest) {
-      setPlayerStats({ kills: liveKills, rank: 0 });
-    }
-  }, [isGuest, liveKills, userId]);
-
-  useEffect(() => {
-    if (!userId || isGuest) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadPlayerStats = async () => {
-      try {
-        const profileRes = await fetch(PLAYER_PROFILE_URL, {
-          method: "POST",
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ user_id: userId }),
-        });
-        if (!profileRes.ok) {
-          throw new Error(`Profile request failed (${profileRes.status})`);
-        }
-        const profile = await profileRes.json();
-
-        const leaderboardRes = await fetch(LEADERBOARD_URL);
-        if (!leaderboardRes.ok) {
-          throw new Error(`Leaderboard request failed (${leaderboardRes.status})`);
-        }
-        const leaderboard = await leaderboardRes.json();
-        const players: LeaderboardPlayerEntry[] = Array.isArray(leaderboard?.players)
-          ? leaderboard.players
-          : Array.isArray(leaderboard?.leaderboard)
-          ? leaderboard.leaderboard
-          : Array.isArray(leaderboard)
-          ? leaderboard
-          : [];
-
-        const myEntry =
-          players.find(
-            (entry) => String(entry?.user_id ?? entry?.id ?? "") === String(userId),
-          ) ?? null;
-
-        const kills = Number(profile?.kills) || 0;
-        const rank = myEntry ? Number(myEntry.rank) || 0 : Number(profile?.rank) || 0;
-
-        if (!cancelled) {
-          setPlayerStats({ kills, rank });
-        }
-      } catch (error) {
-        console.error("Failed to load player HUD stats:", error);
-        if (!cancelled) {
-          setPlayerStats({ kills: 0, rank: 0 });
-        }
-      }
-    };
-
-    loadPlayerStats();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isGuest, userId]);

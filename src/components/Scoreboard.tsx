@@ -2,11 +2,11 @@
 import "../css/Scoreboard.css";
 
 interface ScoreboardProps {
-  kills?: number;
+  kills: number;
   rank?: number;
 }
 
-const Scoreboard = ({ kills = 0, rank = 0 }: ScoreboardProps) => (
+const Scoreboard = ({ kills, rank = 0 }: ScoreboardProps) => (
   <div className="scoreboard">
     <div className="scoreboard-text">
       Kills: <div className="scoreboard-number">{kills}</div>
