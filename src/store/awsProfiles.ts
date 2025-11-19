@@ -134,20 +134,32 @@ export async function loadPlayerStatsAWS(userId: string): Promise<PlayerProfileR
   const url = getEndpoint("loadPlayerProfile", "load_player_profile");
   if (!url) return null;
 
+  const normalizedId = String(userId);
+  if (!normalizedId) return null;
+
   try {
-    const result = await postJson<PlayerProfileResponse>(url, { user_id: userId });
-    const profile = result.profile ?? result;
-    if (result.status === "success" && profile?.user_id) {
-      return {
-        user_id: profile.user_id,
-        email: profile.email ?? null,
-        first_name: profile.first_name ?? null,
-        last_name: profile.last_name ?? null,
-        kills: profile.kills ?? 0,
-        rank: typeof profile.rank === "number" ? profile.rank : null,
-      };
+    const result = await postJson<PlayerProfileResponse>(url, { user_id: normalizedId });
+    const profile = result?.profile ?? result ?? {};
+
+    const resolvedId = String(profile.user_id ?? normalizedId);
+    if (!resolvedId) return null;
+
+    const kills = Number(profile.kills ?? 0);
+    let rank = typeof profile.rank === "number" ? profile.rank : null;
+
+    if (rank === null) {
+      const leaderboard = await loadLeaderboardAWS();
+      rank = leaderboard.find((entry) => entry.id === resolvedId)?.rank ?? null;
     }
-    return null;
+
+    return {
+      user_id: resolvedId,
+      email: profile.email ?? null,
+      first_name: profile.first_name ?? null,
+      last_name: profile.last_name ?? null,
+      kills: Number.isFinite(kills) ? kills : 0,
+      rank: Number.isFinite(rank) ? (rank as number) : 0,
+    };
   } catch (error) {
     console.error("❌ Failed to load player stats via AWS:", error);
     return null;
