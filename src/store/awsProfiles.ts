@@ -147,10 +147,12 @@ export async function loadPlayerStatsAWS(userId: string): Promise<PlayerProfileR
     const kills = Number(profile.kills ?? 0);
     let rank = typeof profile.rank === "number" ? profile.rank : null;
 
-    if (rank === null) {
+    if (!Number.isFinite(rank)) {
       const leaderboard = await loadLeaderboardAWS();
       rank = leaderboard.find((entry) => entry.id === resolvedId)?.rank ?? null;
     }
+
+    const normalizedRank = Number.isFinite(rank) ? (rank as number) : 1;
 
     return {
       user_id: resolvedId,
@@ -158,7 +160,7 @@ export async function loadPlayerStatsAWS(userId: string): Promise<PlayerProfileR
       first_name: profile.first_name ?? null,
       last_name: profile.last_name ?? null,
       kills: Number.isFinite(kills) ? kills : 0,
-      rank: Number.isFinite(rank) ? (rank as number) : 0,
+      rank: normalizedRank,
     };
   } catch (error) {
     console.error("❌ Failed to load player stats via AWS:", error);
