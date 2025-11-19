@@ -46,7 +46,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart, userName, isGues
         {typeof topKills === "number" && topKills > 0 && (
           <div className="game-stats">
             <div className="stat-block">
-              <span className="stat-label">Leaderboard Top</span>
+              <span className="stat-label">Kills: </span>
               <span className="stat-value">{topKills}</span>
             </div>
           </div>
