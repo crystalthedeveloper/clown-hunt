@@ -1,6 +1,7 @@
 // src/store/awsProfiles.ts
 
 export interface PlayerProfilePayload {
+  pk?: string;
   user_id: string;
   email?: string | null;
   first_name?: string | null;
@@ -10,6 +11,7 @@ export interface PlayerProfilePayload {
 }
 
 export interface GuestProfilePayload {
+  pk?: string;
   guest_id: string;
   email?: string | null;
   first_name?: string | null;

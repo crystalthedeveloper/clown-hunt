@@ -143,6 +143,7 @@ export function GameMenu({
       const targetRank = projectedRank ?? currentRank ?? null;
       if (isGuest && guestProfile) {
         await saveGuestStatsAWS({
+          pk: "GUEST",
           guest_id: guestProfile.id,
           email: guestProfile.email,
           first_name: userName ?? "Guest",
@@ -158,6 +159,7 @@ export function GameMenu({
         localStorage.setItem("guestProfile", JSON.stringify(updated));
       } else if (playerProfile) {
         await savePlayerStatsAWS({
+          pk: "PROFILE",
           user_id: playerProfile.id,
           email: playerProfile.email,
           first_name: playerProfile.firstName,
