@@ -138,10 +138,6 @@ function App() {
             isGuest: Boolean(data.is_guest),
             kills: data.kills ?? 0,
           });
-          if (window.location.search.includes("clownhunt_token")) {
-            const newUrl = window.location.pathname;
-            history.replaceState({}, "", newUrl);
-          }
           return;
         }
         throw new Error("Token validation response missing user data");
