@@ -91,23 +91,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!user || user.isGuest) {
-      setProfileStats(null, null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const stats = await loadPlayerStatsAWS(user.id);
-      if (!cancelled) {
-        setProfileStats(stats?.kills ?? null, stats?.rank ?? null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [setProfileStats, user]);
-
-  useEffect(() => {
     if (user) return;
     const restBase =
       new URLSearchParams(window.location.search).get("clownhunt_rest_base") ||
@@ -151,6 +134,26 @@ function App() {
       cancelled = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (user.isGuest) {
+      setProfileStats(null, null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const stats = await loadPlayerStatsAWS(user.id);
+      if (!cancelled) {
+        setProfileStats(stats?.kills ?? null, stats?.rank ?? null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setProfileStats, user]);
 
   if (loading) {
     return <div className="app__loading">Preparing session…</div>;
