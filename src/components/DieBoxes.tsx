@@ -4,10 +4,12 @@
 import { Mesh } from "three";
 import { useBox } from "@react-three/cannon";
 
+type PlayerDeathContext = { attackerId: number | null; immediate?: boolean };
+
 type DieBoxProps = {
   position: [number, number, number];
   size?: [number, number, number];
-  onPlayerDie: () => void;
+  onPlayerDie: (context: PlayerDeathContext) => void;
 };
 
 export function DieBox({
@@ -24,7 +26,7 @@ export function DieBox({
     onCollide: (e) => {
       if (e.body.userData.isPlayer) {
         // Trigger game over when player touches the DieBox
-        onPlayerDie();
+        onPlayerDie({ attackerId: null, immediate: true });
       }
     },
   }));
@@ -32,14 +34,14 @@ export function DieBox({
   return (
     <mesh ref={ref} castShadow receiveShadow>
       <boxGeometry args={size} />
-      <meshStandardMaterial color="black" />
+      <meshStandardMaterial color="black" roughness={0.65} metalness={0.1} />
     </mesh>
   );
 }
 
 type DieBoxesProps = {
   existingPositions: [number, number, number][];
-  onPlayerDie: () => void;
+  onPlayerDie: (context: PlayerDeathContext) => void;
 };
 
 export function DieBoxes({ existingPositions, onPlayerDie }: DieBoxesProps) {

@@ -9,20 +9,36 @@
   gap: 24px;
   z-index: 1000;
   pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.controls-bar--hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Virtual Trackpad */
 .trackpad-container {
   pointer-events: auto;
   z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
 .trackpad-surface {
-  width: 190px;
-  height: 190px;
+  width: 160px;
+  height: 160px;
   border-radius: 32px;
   background: rgba(12, 12, 20, 0.8);
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  border: 2px solid var(--power-border-color, rgba(255, 255, 255, 0.35));
+  box-shadow: 0 0 20px var(--power-border-glow, rgba(255, 255, 255, 0.12));
+  background-image:
+    var(--power-border-gradient, none),
+    conic-gradient(var(--power-border-color, rgba(255,255,255,0.3)) calc(var(--power-border-progress, 0) * 360deg), transparent 0);
+  padding: 4px;
   position: relative;
   display: flex;
   align-items: center;
@@ -56,6 +72,112 @@
   pointer-events: none;
 }
 
+.trackpad-meta {
+  width: 210px;
+  background: rgba(7, 7, 10, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  padding: 12px 16px 14px;
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1;
+  pointer-events: auto;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.trackpad-meta-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.trackpad-meta-label {
+  color: #ffffff;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+}
+
+.trackpad-meta-corruption-value {
+  font-size: 0.95rem;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.trackpad-meta-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  position: relative;
+}
+
+.trackpad-meta-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #c0392b, #f1c40f, #2ecc71);
+  transition: width 0.25s ease-out;
+}
+
+.trackpad-meta-caption {
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  margin-top: 8px;
+  opacity: 0.78;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.trackpad-meta-pause {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.trackpad-meta-pause:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.trackpad-meta-pause:active {
+  transform: translateY(0);
+}
+
+.trackpad-meta-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-weight: 700;
+}
+
+.trackpad-meta-stat {
+  font-size: 0.95rem;
+}
+
+.trackpad-meta-kills {
+  color: #e52828;
+}
+
+.trackpad-meta-logos {
+  color: #00d1ff;
+}
+
+.trackpad-meta-power {
+  color: #ffe28a;
+}
+
 .trackpad-instructions {
   position: absolute;
   bottom: 16px;
@@ -64,43 +186,6 @@
   text-transform: uppercase;
   letter-spacing: 0.08rem;
   pointer-events: none;
-}
-
-/* Shooting Button */
-.shoot-container {
-  pointer-events: auto;
-}
-
-.shoot-container button {
-  width: 64px;
-  height: 64px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(12, 12, 20, 0.8);
-  color: #fff;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0px 6px 16px rgba(0, 0, 0, 0.45);
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  transition: transform 120ms ease, background 160ms ease, border-color 160ms ease;
-}
-
-.shoot-container button:hover {
-  background: rgba(30, 30, 40, 0.85);
-  border-color: rgba(255, 255, 255, 0.55);
-  transform: scale(1.1);
-}
-
-.shoot-container button:active {
-  transform: scale(0.95);
-}
-
-.shoot-container button:focus-visible {
-  outline: 3px solid rgba(255, 255, 255, 0.85);
-  outline-offset: 6px;
 }
 
 /* 📱 Mobile Optimizations */
@@ -122,14 +207,13 @@
     height: 58px;
   }
 
+  .trackpad-meta {
+    width: 190px;
+  }
+
   .trackpad-instructions {
     font-size: 0.75rem;
     bottom: 12px;
-  }
-
-  .shoot-container button {
-    padding: 18px 20px;
-    font-size: 1.4rem;
   }
 }
 
@@ -149,8 +233,8 @@
     height: 50px;
   }
 
-  .shoot-container button {
-    padding: 16px 18px;
-    font-size: 1.3rem;
+  .trackpad-meta {
+    width: 170px;
+    font-size: 0.78rem;
   }
 }

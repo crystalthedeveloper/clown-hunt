@@ -3,6 +3,11 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { weaponConfigs } from "../config/weapons";
 
+const CORRUPTION_BASE_RATE = 2.2; // % per second at wave 1
+const CORRUPTION_WAVE_FACTOR = 0.45; // additional % per wave per second
+const CORRUPTION_KILL_PENALTY = 14; // % removed per kill
+const CORRUPTION_OVERFLOW_KILL_PENALTY = 10; // kills removed on overflow
+
 type Position = [number, number, number];
 
 interface Clown {
@@ -10,14 +15,20 @@ interface Clown {
   position: Position;
   isAlive: boolean;
   health: number;
+  state?: "alive" | "dying" | "removed";
+  deathAnimation?: string;
 }
 
 interface PlayerState {
   velocity: { x: number; z: number };
   rotation: number;
+  controlsLocked: boolean;
+  movementSpeedMultiplier: number;
   setVelocity: (x: number, z: number) => void;
   setRotation: (rotation: number | ((prev: number) => number)) => void;
   resetMovement: () => void;
+  setControlsLocked: (locked: boolean) => void;
+  setMovementSpeedMultiplier: (value: number) => void;
 }
 
 interface GameState {
@@ -30,6 +41,9 @@ interface GameState {
   totalMovableBlackBoxes: number;
   groundSize: number;
   playerStartPosition: Position;
+  currentWave: number;
+  corruption: number;
+  isPaused: boolean;
   isGameOver: boolean;
   gameResult: "win" | "lose" | null;
   clownData: Clown[];
@@ -44,13 +58,18 @@ interface GameState {
 
   // Actions
   setGameOver: (result: "win" | "lose") => void;
-  increaseKills: () => void;
+  killClown: () => number;
   increaseLogos: () => void;
   setCollectedLogos: (count: number | ((prev: number) => number)) => void;
   setClownData: (clowns: Clown[] | ((prev: Clown[]) => Clown[])) => void;
   setLogoPositions: (positions: Position[]) => void;
   setBulletLevel: (level: number) => void;
   upgradeBullet: () => void;
+  setWave: (wave: number) => void;
+  nextWave: () => number;
+  tickCorruption: (delta: number) => { overflowed: boolean; wave: number };
+  handleCorruptionOverflow: () => number;
+  setPaused: (paused: boolean) => void;
   resetGame: () => void;
 }
 
@@ -58,9 +77,11 @@ export const useGameStore = create<PlayerState & GameState>()(
   subscribeWithSelector((set, get) => ({
     velocity: { x: 0, z: 0 },
     rotation: 0,
+    controlsLocked: false,
+    movementSpeedMultiplier: 1,
 
-    groundSize: 75,
-    playerStartPosition: [0, 1, 0],
+    groundSize: 60,
+    playerStartPosition: [-15, 2, 15],
     totalBlackBoxes: 20,
     totalDieBoxes: 10,
     totalMovableBlackBoxes: 10,
@@ -69,6 +90,9 @@ export const useGameStore = create<PlayerState & GameState>()(
 
     kills: 0,
     collectedLogos: 0,
+    currentWave: 1,
+    corruption: 0,
+    isPaused: false,
     isGameOver: false,
     gameResult: null,
     clownData: [],
@@ -94,19 +118,39 @@ export const useGameStore = create<PlayerState & GameState>()(
             : rotationOrUpdater,
       })),
     resetMovement: () => set(() => ({ velocity: { x: 0, z: 0 }, rotation: 0 })),
+    setControlsLocked: (locked) =>
+      set((state) => ({
+        controlsLocked: locked,
+        velocity: locked ? { x: 0, z: 0 } : state.velocity,
+      })),
+    setMovementSpeedMultiplier: (value) =>
+      set(() => ({
+        movementSpeedMultiplier: Math.max(0.1, value),
+      })),
 
     setGameOver: (result) =>
       set(() => ({
         isGameOver: true,
+        isPaused: false,
         gameResult: result,
         velocity: { x: 0, z: 0 },
         rotation: 0,
+        controlsLocked: true,
+        movementSpeedMultiplier: 1,
       })),
 
-    increaseKills: () =>
-      set((state) => ({
-        kills: state.kills + 1,
-      })),
+    killClown: () => {
+      let updatedKills = 0;
+      set((state) => {
+        updatedKills = state.kills + 1;
+        const reducedCorruption = Math.max(0, state.corruption - CORRUPTION_KILL_PENALTY);
+        return {
+          kills: updatedKills,
+          corruption: reducedCorruption,
+        };
+      });
+      return updatedKills;
+    },
 
     increaseLogos: () =>
       set((state) => ({
@@ -145,10 +189,90 @@ export const useGameStore = create<PlayerState & GameState>()(
       }),
     upgradeBullet: () => undefined,
 
+    setWave: (wave) =>
+      set(() => ({
+        currentWave: Math.max(1, Math.floor(wave)),
+        corruption: 0,
+      })),
+
+    nextWave: () => {
+      let newWave = 1;
+      set((state) => {
+        newWave = state.currentWave + 1;
+        return {
+          currentWave: newWave,
+          corruption: 0,
+        };
+      });
+      return newWave;
+    },
+
+    handleCorruptionOverflow: () => {
+      let adjustedWave = 1;
+      set((state) => {
+        if (state.corruption < 100) {
+          adjustedWave = state.currentWave;
+          return {};
+        }
+        const penalizedKills = Math.max(0, state.kills - CORRUPTION_OVERFLOW_KILL_PENALTY);
+        adjustedWave = Math.max(1, state.currentWave - 1);
+        return {
+          kills: penalizedKills,
+          currentWave: adjustedWave,
+          corruption: 0,
+        };
+      });
+      return adjustedWave;
+    },
+
+    tickCorruption: (delta) => {
+      let overflowed = false;
+      set((state) => {
+        if (state.isPaused) {
+          return {};
+        }
+        if (state.isGameOver) {
+          return {};
+        }
+
+        const hasLivingClown = state.clownData.some((clown) => clown.isAlive);
+        if (!hasLivingClown) {
+          if (state.corruption === 0) return {};
+          return { corruption: 0 };
+        }
+
+        const rate = CORRUPTION_BASE_RATE + state.currentWave * CORRUPTION_WAVE_FACTOR;
+        const increment = rate * delta;
+        let nextValue = state.corruption + increment;
+        if (nextValue >= 100) {
+          overflowed = true;
+          nextValue = 100;
+        }
+        return { corruption: nextValue };
+      });
+
+      if (overflowed) {
+        const punishedWave = get().handleCorruptionOverflow();
+        return { overflowed: true, wave: punishedWave };
+      }
+
+      return { overflowed: false, wave: get().currentWave };
+    },
+
+    setPaused: (paused) =>
+      set((state) => ({
+        isPaused: paused,
+        controlsLocked: paused ? true : state.controlsLocked,
+        velocity: paused ? { x: 0, z: 0 } : state.velocity,
+      })),
+
     resetGame: () =>
       set((state) => ({
         kills: 0,
         collectedLogos: 0,
+        currentWave: 1,
+        corruption: 0,
+        isPaused: false,
         isGameOver: false,
         gameResult: null,
         clownData: [],
@@ -158,6 +282,8 @@ export const useGameStore = create<PlayerState & GameState>()(
         bulletPulse: state.bulletPulse + 1,
         velocity: { x: 0, z: 0 },
         rotation: 0,
+        movementSpeedMultiplier: 1,
+        controlsLocked: false,
         totalLogos: state.totalLogos,
         totalClowns: state.totalClowns,
         totalBlackBoxes: state.totalBlackBoxes,

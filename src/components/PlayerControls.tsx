@@ -3,13 +3,13 @@
 // button. The trackpad supports both pointer/touch dragging and keyboard controls (arrow keys or
 // WASD) so that assistive technology users retain full access to movement.
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { useGameStore } from "../store/store";
-import { BulletIcon } from "./ui/BulletIcon";
 import "../css/PlayerControls.css";
 
 interface PlayerControlsProps {
-  onShoot: () => void;
+  powerTimerMs: number;
+  hideControls?: boolean;
 }
 
 interface PointerState {
@@ -23,7 +23,7 @@ interface PointerState {
 
 const MOVE_SENSITIVITY = 100;
 const ROTATION_SENSITIVITY = 200;
-const MAX_SPEED = 3.5;
+const BASE_MAX_SPEED = 3.5;
 const ROTATION_STEP = 0.02;
 const DEAD_ZONE = 0.12;
 const INDICATOR_RANGE = 55;
@@ -49,34 +49,44 @@ const INITIAL_POINTER_STATE: PointerState = {
   currentY: 0,
 };
 
-const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
+const PlayerControls: React.FC<PlayerControlsProps> = ({ powerTimerMs, hideControls = false }) => {
   const setVelocity = useGameStore((state) => state.setVelocity);
   const setRotation = useGameStore((state) => state.setRotation);
-  const bulletLevel = useGameStore((state) => state.bulletLevel);
-  const bulletDamage = useGameStore((state) => state.bulletDamage);
-  const bulletPulseToken = useGameStore((state) => state.bulletPulse);
-  const [pulse, setPulse] = useState(false);
-
-  useEffect(() => {
-    setPulse(true);
-    const timeout = window.setTimeout(() => setPulse(false), 360);
-    return () => window.clearTimeout(timeout);
-  }, [bulletPulseToken, bulletLevel]);
+  const controlsLocked = useGameStore((state) => state.controlsLocked);
+  const setControlsLockedStore = useGameStore((state) => state.setControlsLocked);
+  const movementSpeedMultiplier = useGameStore((state) => state.movementSpeedMultiplier);
+  const isGameOver = useGameStore((state) => state.isGameOver);
+  const isPaused = useGameStore((state) => state.isPaused);
+  const setPaused = useGameStore((state) => state.setPaused);
+  const currentWave = useGameStore((state) => state.currentWave);
+  const corruption = useGameStore((state) => state.corruption);
+  const kills = useGameStore((state) => state.kills);
+  const collectedLogos = useGameStore((state) => state.collectedLogos);
+  const totalLogos = useGameStore((state) => state.totalLogos);
   const trackpadIndicatorRef = useRef<HTMLDivElement | null>(null);
   const pointerFrameRef = useRef<number | null>(null);
   const keyboardFrameRef = useRef<number | null>(null);
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const lastVelocityRef = useRef({ x: 0, z: 0 });
+  const lastMoveFactorRef = useRef(0);
+  const movementMultiplierRef = useRef(movementSpeedMultiplier);
 
   const pointerStateRef = useRef<PointerState>({ ...INITIAL_POINTER_STATE });
 
   const applyVelocity = useCallback(
     (z: number) => {
+      if (controlsLocked) {
+        if (Math.abs(z) < EPSILON && Math.abs(lastVelocityRef.current.z) > EPSILON) {
+          lastVelocityRef.current = { x: 0, z: 0 };
+          setVelocity(0, 0);
+        }
+        return;
+      }
       if (Math.abs(lastVelocityRef.current.z - z) < EPSILON) return;
       lastVelocityRef.current = { x: 0, z };
       setVelocity(0, z);
     },
-    [setVelocity]
+    [controlsLocked, setVelocity]
   );
 
   const resetIndicator = useCallback(() => {
@@ -88,6 +98,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
   const applyIdleVelocity = useCallback(() => {
     if (!pointerStateRef.current.active && pressedKeysRef.current.size === 0) {
       applyVelocity(0);
+      lastMoveFactorRef.current = 0;
     }
   }, [applyVelocity]);
 
@@ -99,17 +110,18 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
     pointerStateRef.current = { ...INITIAL_POINTER_STATE };
     resetIndicator();
     applyIdleVelocity();
+    lastMoveFactorRef.current = 0;
   }, [applyIdleVelocity, resetIndicator]);
 
   const clamp = (value: number, min: number, max: number) =>
     Math.min(Math.max(value, min), max);
 
   const startPointerLoop = useCallback(() => {
-    if (pointerFrameRef.current !== null) return;
+    if (pointerFrameRef.current !== null || controlsLocked) return;
 
     const step = () => {
       const state = pointerStateRef.current;
-      if (!state.active) {
+      if (!state.active || controlsLocked) {
         pointerFrameRef.current = null;
         return;
       }
@@ -123,10 +135,14 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
       const moveFactor = Math.abs(moveFactorRaw) < DEAD_ZONE ? 0 : moveFactorRaw;
       const rotateFactor = Math.abs(rotateFactorRaw) < DEAD_ZONE ? 0 : rotateFactorRaw;
 
+      const maxSpeed = BASE_MAX_SPEED * movementMultiplierRef.current;
+
       if (moveFactor !== 0) {
-        applyVelocity(moveFactor * MAX_SPEED);
+        applyVelocity(moveFactor * maxSpeed);
+        lastMoveFactorRef.current = moveFactor;
       } else if (pressedKeysRef.current.size === 0) {
         applyVelocity(0);
+        lastMoveFactorRef.current = 0;
       }
 
       if (rotateFactor !== 0) {
@@ -142,9 +158,10 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
     };
 
     step();
-  }, [applyVelocity, setRotation]);
+  }, [applyVelocity, controlsLocked, setRotation]);
 
   const updateKeyboardMovement = useCallback(() => {
+    if (controlsLocked) return;
     const pressed = pressedKeysRef.current;
     if (pressed.size === 0) return;
 
@@ -156,22 +173,26 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
     if (pressed.has("arrowleft") || pressed.has("a")) rotationChange += 1;
     if (pressed.has("arrowright") || pressed.has("d")) rotationChange -= 1;
 
+    const maxSpeed = BASE_MAX_SPEED * movementMultiplierRef.current;
+
     if (moveZ !== 0) {
-      applyVelocity(moveZ * MAX_SPEED);
+      applyVelocity(moveZ * maxSpeed);
+      lastMoveFactorRef.current = moveZ;
     } else if (!pointerStateRef.current.active) {
       applyVelocity(0);
+      lastMoveFactorRef.current = 0;
     }
 
     if (rotationChange !== 0) {
       setRotation((prev) => prev + rotationChange * ROTATION_STEP);
     }
-  }, [applyVelocity, setRotation]);
+  }, [applyVelocity, controlsLocked, setRotation]);
 
   const startKeyboardLoop = useCallback(() => {
-    if (keyboardFrameRef.current !== null) return;
+    if (keyboardFrameRef.current !== null || controlsLocked) return;
 
     const step = () => {
-      if (pressedKeysRef.current.size === 0) {
+      if (pressedKeysRef.current.size === 0 || controlsLocked) {
         keyboardFrameRef.current = null;
         return;
       }
@@ -181,7 +202,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
 
     updateKeyboardMovement();
     keyboardFrameRef.current = requestAnimationFrame(step);
-  }, [updateKeyboardMovement]);
+  }, [controlsLocked, updateKeyboardMovement]);
 
   const stopKeyboardLoop = useCallback(() => {
     if (keyboardFrameRef.current !== null) {
@@ -190,6 +211,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
     }
     pressedKeysRef.current.clear();
     applyIdleVelocity();
+    lastMoveFactorRef.current = 0;
   }, [applyIdleVelocity]);
 
   useEffect(() => {
@@ -209,19 +231,8 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
     };
   }, [stopKeyboardLoop, stopPointerLoop]);
 
-  useEffect(() => {
-    const handleShootKey = (event: KeyboardEvent) => {
-      if (event.key === " ") {
-        event.preventDefault();
-        onShoot();
-      }
-    };
-
-    window.addEventListener("keydown", handleShootKey);
-    return () => window.removeEventListener("keydown", handleShootKey);
-  }, [onShoot]);
-
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (controlsLocked) return;
     const state = pointerStateRef.current;
     if (state.active) return;
 
@@ -239,6 +250,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (controlsLocked) return;
     const state = pointerStateRef.current;
     if (!state.active || state.pointerId !== event.pointerId) return;
 
@@ -256,6 +268,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
   };
 
   const handleTrackpadKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (controlsLocked) return;
     const key = event.key.toLowerCase();
     if (!MOVEMENT_KEYS.has(key)) return;
     event.preventDefault();
@@ -280,8 +293,83 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
     resetIndicator();
   };
 
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (controlsLocked) return;
+      const key = event.key.toLowerCase();
+      if (!MOVEMENT_KEYS.has(key)) return;
+      event.preventDefault();
+      if (!pressedKeysRef.current.has(key)) {
+        pressedKeysRef.current.add(key);
+        startKeyboardLoop();
+      }
+    };
+
+    const handleGlobalKeyUp = (event: KeyboardEvent) => {
+      if (controlsLocked) return;
+      const key = event.key.toLowerCase();
+      if (!MOVEMENT_KEYS.has(key)) return;
+      event.preventDefault();
+      pressedKeysRef.current.delete(key);
+      if (pressedKeysRef.current.size === 0) {
+        stopKeyboardLoop();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    window.addEventListener("keyup", handleGlobalKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+      window.removeEventListener("keyup", handleGlobalKeyUp);
+    };
+  }, [controlsLocked, startKeyboardLoop, stopKeyboardLoop]);
+
+  useEffect(() => {
+    if (!controlsLocked) return;
+    pointerStateRef.current = { ...INITIAL_POINTER_STATE };
+    pressedKeysRef.current.clear();
+    resetIndicator();
+    stopPointerLoop();
+    stopKeyboardLoop();
+    lastVelocityRef.current = { x: 0, z: 0 };
+    lastMoveFactorRef.current = 0;
+    setVelocity(0, 0);
+  }, [controlsLocked, resetIndicator, setVelocity, stopKeyboardLoop, stopPointerLoop]);
+
+  useEffect(() => {
+    movementMultiplierRef.current = movementSpeedMultiplier;
+  }, [movementSpeedMultiplier]);
+
+  useEffect(() => {
+    if (controlsLocked) return;
+    const factor = lastMoveFactorRef.current;
+    if (Math.abs(factor) < EPSILON) return;
+    const newSpeed = factor * BASE_MAX_SPEED * movementSpeedMultiplier;
+    lastVelocityRef.current = { x: 0, z: newSpeed };
+    setVelocity(0, newSpeed);
+  }, [controlsLocked, movementSpeedMultiplier, setVelocity]);
+
+  const handlePauseToggle = () => {
+    if (isGameOver) return;
+    const next = !isPaused;
+    setPaused(next);
+    setControlsLockedStore(next);
+    if (next) {
+      applyVelocity(0);
+      lastMoveFactorRef.current = 0;
+    }
+  };
+
+  const corruptionPercent = Math.round(Math.min(100, corruption));
+  const powerLabel = useMemo(() => {
+    const powerSeconds = Math.ceil(Math.max(0, powerTimerMs) / 1000);
+    return powerSeconds > 0 ? `${powerSeconds}s` : "Off";
+  }, [powerTimerMs]);
+
+  const isVisible = !isGameOver && !hideControls;
+
   return (
-    <div className="controls-bar">
+    <div className={`controls-bar${isVisible ? "" : " controls-bar--hidden"}`}>
       {/* Virtual Trackpad */}
       <div className="trackpad-container">
         <div
@@ -300,24 +388,27 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onShoot }) => {
         >
           <div ref={trackpadIndicatorRef} className="trackpad-thumb" />
         </div>
-      </div>
+        <div className="trackpad-meta">
+          <div className="trackpad-meta-header">
+            <span className="trackpad-meta-label">Wave {currentWave}</span>
+            <span className="trackpad-meta-stat trackpad-meta-kills">{kills}</span>
+            <span className="trackpad-meta-stat trackpad-meta-logos">
+              {collectedLogos}/{totalLogos}
+            </span>
+            <span className="trackpad-meta-stat trackpad-meta-power">{powerLabel}</span>
+            <span className="trackpad-meta-corruption-value">{corruptionPercent}%</span>
 
-      {/* Shooting Button */}
-      <div className="shoot-container">
-        <button
-          type="button"
-          aria-label="Shoot"
-          onMouseDown={onShoot}
-          onTouchStart={onShoot}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              onShoot();
-            }
-          }}
-        >
-          <BulletIcon damage={bulletDamage} pulse={pulse} />
-        </button>
+          </div>
+          <div className="trackpad-meta-bar">
+            <div className="trackpad-meta-fill" style={{ width: `${corruptionPercent}%` }} />
+          </div>
+          <div className="trackpad-meta-caption">
+            <span>Corruption Timer</span>
+            <button className="trackpad-meta-pause" type="button" onClick={handlePauseToggle}>
+              {isPaused ? "Resume" : "Pause"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

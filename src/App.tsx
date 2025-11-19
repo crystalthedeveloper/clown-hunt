@@ -1,8 +1,10 @@
-import { lazy, Suspense, useEffect, useState } from "react";
-import WelcomeScreen from "./components/WelcomeScreen";
-import LoginScreen from "./components/LoginScreen";
-import type { AuthSuccessPayload, StoredGuestProfile, StoredPlayerProfile } from "./types/user";
+import { Suspense, lazy, useEffect, useState } from "react";
 import "./App.css";
+import WelcomeScreen from "./components/WelcomeScreen";
+import type { StoredGuestProfile, StoredPlayerProfile } from "./types/user";
+
+const GameCanvas = lazy(() => import("./components/GameCanvas"));
+const BYPASS_AUTH = (import.meta.env.VITE_BYPASS_AUTH ?? "false") === "true";
 
 interface User {
   id: string;
@@ -11,60 +13,61 @@ interface User {
   isGuest?: boolean;
   kills?: number;
 }
-
-const GameCanvas = lazy(() => import("./components/GameCanvas"));
-
 function App() {
-
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [gameStarted, setGameStarted] = useState(false);
 
   useEffect(() => {
-    function fetchUser() {
-      const storedPlayerRaw = localStorage.getItem("playerProfile");
-      if (storedPlayerRaw) {
-        try {
-          const storedPlayer: StoredPlayerProfile = JSON.parse(storedPlayerRaw);
-          setUser({
-            id: storedPlayer.id,
-            fullName: [storedPlayer.firstName, storedPlayer.lastName].filter(Boolean).join(" ").trim() || "Player",
-            email: storedPlayer.email,
-            isGuest: false,
-            kills: storedPlayer.kills ?? 0,
-          });
-          setLoading(false);
-          return;
-        } catch {
-          localStorage.removeItem("playerProfile");
-        }
+    const storedPlayerRaw = localStorage.getItem("playerProfile");
+    if (storedPlayerRaw) {
+      try {
+        const storedPlayer: StoredPlayerProfile = JSON.parse(storedPlayerRaw);
+        setUser({
+          id: storedPlayer.id,
+          fullName: [storedPlayer.firstName, storedPlayer.lastName].filter(Boolean).join(" ").trim() || "Player",
+          email: storedPlayer.email,
+          isGuest: false,
+          kills: storedPlayer.kills ?? 0,
+        });
+        setLoading(false);
+        return;
+      } catch {
+        localStorage.removeItem("playerProfile");
       }
-
-      const storedGuest = localStorage.getItem("guestProfile");
-      if (storedGuest) {
-        try {
-          const guest: StoredGuestProfile = JSON.parse(storedGuest);
-          setUser({
-            id: guest.id,
-            fullName: guest.fullName || "Player",
-            email: guest.email,
-            isGuest: true,
-            kills: guest.kills ?? 0,
-          });
-          setLoading(false);
-          return;
-        } catch {
-          localStorage.removeItem("guestProfile");
-        }
-      }
-
-      setLoading(false);
     }
 
-    fetchUser();
+    const storedGuest = localStorage.getItem("guestProfile");
+    if (storedGuest) {
+      try {
+        const guest: StoredGuestProfile = JSON.parse(storedGuest);
+        setUser({
+          id: guest.id,
+          fullName: guest.fullName || "Player",
+          email: guest.email,
+          isGuest: true,
+          kills: guest.kills ?? 0,
+        });
+        setLoading(false);
+        return;
+      } catch {
+        localStorage.removeItem("guestProfile");
+      }
+    }
+
+    setLoading(false);
+
+    if (BYPASS_AUTH) {
+      setUser({
+        id: "dev-tester",
+        fullName: "Dev Tester",
+        email: "tester@example.com",
+        isGuest: false,
+        kills: 0,
+      });
+    }
   }, []);
 
-  // ✅ Prevent zooming (touch devices)
   useEffect(() => {
     const preventZoom = (event: TouchEvent) => {
       if (event.touches.length > 1) event.preventDefault();
@@ -84,59 +87,39 @@ function App() {
     };
   }, []);
 
-  const handleLoginSuccess = (payload: AuthSuccessPayload) => {
-    if (payload?.isGuest) {
-      setUser({
-        id: payload.id,
-        fullName: payload.fullName || "Player",
-        email: payload.email,
-        isGuest: true,
-        kills: payload.kills ?? 0,
-      });
-      return;
-    }
-
-    localStorage.removeItem("guestProfile");
-    setUser({
-      id: payload.id,
-      fullName: payload.fullName || "Player",
-      email: payload.email,
-      isGuest: false,
-      kills: payload.kills ?? 0,
-    });
-  };
-
-  const handleSignOut = async () => {
-    if (user?.isGuest) {
-      localStorage.removeItem("guestProfile");
-      setUser(null);
-      setGameStarted(false);
-      return;
-    }
-
-    localStorage.removeItem("playerProfile");
-    setUser(null);
-    setGameStarted(false);
-  };
-
-  if (loading) return null;
+  if (loading) {
+    return <div className="app__loading">Preparing session…</div>;
+  }
 
   if (!user) {
-    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+    if (BYPASS_AUTH) {
+      return <div className="app__loading">Preparing dev session…</div>;
+    }
+    return (
+      <div className="welcome-screen auth-gate">
+        <div className="welcome-box auth-box">
+          <h1 className="welcome-box-header">WordPress Sign In</h1>
+          <p className="auth-message">Please authenticate through WordPress to enter the arena.</p>
+          <div className="welcome-actions">
+            <button
+              className="menu-button action-button"
+              onClick={() => window.location.assign("https://www.crystalthedeveloper.ca/log-in")}
+            >
+              Go to Login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
     <>
       {!gameStarted ? (
-        <WelcomeScreen
-          userName={user.fullName}
-          isGuest={user.isGuest}
-          onStart={() => setGameStarted(true)}
-          onSignOut={handleSignOut}
-        />
+        <WelcomeScreen userName={user.fullName} isGuest={user.isGuest} onStart={() => setGameStarted(true)} />
       ) : (
         <Suspense fallback={<div className="app__loading">Launching arena...</div>}>
-          <GameCanvas userId={user.id} isGuest={user.isGuest} />
+          <GameCanvas />
         </Suspense>
       )}
     </>

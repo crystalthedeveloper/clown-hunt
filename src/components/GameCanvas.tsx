@@ -1,42 +1,29 @@
 // components/GameCanvas.tsx
-import { useRef, useEffect, useState, Suspense, useCallback } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useRef, useEffect, useState, Suspense, useCallback, useMemo } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { Physics } from "@react-three/cannon";
 import { Html, Environment, useGLTF } from "@react-three/drei";
-import * as THREE from "three";
 
 import { Ground } from "./Ground";
 import { Player, PlayerRef } from "./Player";
 import PlayerControls from "./PlayerControls";
-import { Clown } from "./Clown";
+import { Clown, DyingClown } from "./Clown";
 import { LogoItem } from "./LogoItem";
+import { LogoShowcase } from "./LogoShowcase";
 import { MovableBlackBox } from "./MovableBlackBox";
 import { BlackBoxes } from "./BlackBoxes";
 import { DieBoxes } from "./DieBoxes";
-import Scoreboard from "./Scoreboard";
 import { GameMenu } from "./GameMenu";
 import { useGameStore } from "../store/store";
 import { loadLeaderboardAWS } from "../store/awsProfiles";
 import { weaponConfigs } from "../config/weapons";
 import { GROUND_TOP } from "../config/world";
 
-const PLAYER_PROFILE_URL =
-  "https://1rdfzd1e59.execute-api.ca-central-1.amazonaws.com/prod/load_player_profile";
-const JSON_HEADERS = {
-  "Content-Type": "application/json",
-};
-
-interface GameCanvasProps {
-  userId?: string;
-  isGuest?: boolean;
-}
-
-function GameCanvas({ userId, isGuest }: GameCanvasProps) {
+function GameCanvas() {
   const playerRef = useRef<PlayerRef | null>(null);
-  const bulletsRef = useRef<THREE.Mesh[]>([]);
 
   const setCollectedLogos = useGameStore((state) => state.setCollectedLogos);
-  const increaseKills = useGameStore((state) => state.increaseKills);
+  const killClownStat = useGameStore((state) => state.killClown);
   const isGameOver = useGameStore((state) => state.isGameOver);
   const setGameOver = useGameStore((state) => state.setGameOver);
   const resetGame = useGameStore((state) => state.resetGame);
@@ -50,22 +37,35 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
   const totalMovableBlackBoxes = useGameStore((state) => state.totalMovableBlackBoxes);
   const groundSize = useGameStore((state) => state.groundSize);
   const playerStartPosition = useGameStore((state) => state.playerStartPosition);
+  const setControlsLocked = useGameStore((state) => state.setControlsLocked);
+  const setMovementSpeedMultiplier = useGameStore((state) => state.setMovementSpeedMultiplier);
+  const setWave = useGameStore((state) => state.setWave);
+  const advanceWave = useGameStore((state) => state.nextWave);
+  const isPaused = useGameStore((state) => state.isPaused);
 
   const { scene: clownModel, animations: clownAnimations } = useGLTF("/clown.glb");
-  const { scene: logosModel } = useGLTF("/logos.glb");
-  const logoChildrenCount = logosModel.children.length;
+  const playerDieAnimationDurationMs = useMemo(() => {
+    const clip = clownAnimations.find((entry) =>
+      entry.name?.toLowerCase?.().includes("player_die"),
+    );
+    return Math.round((clip?.duration ?? 2.4) * 1000);
+  }, [clownAnimations]);
+  const deathSequenceDurationMs = playerDieAnimationDurationMs + 350;
 
-  const dieSound = new Audio("/die.mp3");
-  dieSound.volume = 0.8;
+  const dieSound = useMemo(() => {
+    const audio = new Audio("/die.mp3");
+    audio.volume = 0.8;
+    return audio;
+  }, []);
 
   const clownsPerWave = 10;
   const baseWaveSpeed = 0.6;
   const waveSpeedIncrement = 0.18;
 
-  const [currentWave, setCurrentWave] = useState(1);
   const [waveSpeedMultiplier, setWaveSpeedMultiplier] = useState(baseWaveSpeed);
   const spawnTimeoutRef = useRef<number | null>(null);
   const clownIdCounterRef = useRef(0);
+  const gameOverTimeoutRef = useRef<number | null>(null);
 
   const environmentObstaclesRef = useRef<[number, number, number][]>([]);
   const totalScore = useGameStore((state) => state.killScore);
@@ -77,47 +77,101 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
   const [blackBoxPositions, setBlackBoxPositions] = useState<[number, number, number][]>([]);
   const [dieBoxPositions, setDieBoxPositions] = useState<[number, number, number][]>([]);
   const [movableBoxPositions, setMovableBoxPositions] = useState<[number, number, number][]>([]);
-  const [playerRank, setPlayerRank] = useState<number | null>(null);
+  const [logoGeneration, setLogoGeneration] = useState(0);
+  const [sessionId, setSessionId] = useState(0);
+  const powerTimeoutRef = useRef<number | null>(null);
+  const powerIntervalRef = useRef<number | null>(null);
+  const powerExpiryRef = useRef(0);
+  const pausedPowerRemainingRef = useRef<number | null>(null);
+  const [powerDurationMs, setPowerDurationMs] = useState(0);
+  const [powerTimerMs, setPowerTimerMs] = useState(0);
+  const [powerTier, setPowerTier] = useState(0);
+  const [playerDeathAnimationClown, setPlayerDeathAnimationClown] = useState<number | null>(null);
+  const [dyingClowns, setDyingClowns] = useState<
+    Array<{ id: string; position: [number, number, number]; animation: string; lookAtTarget?: [number, number, number] }>
+  >([]);
+  const isPowerActive = powerTimerMs > 0;
+  const POWER_MOVEMENT_MULTIPLIER = 1.45;
+
+  const stopPowerCountdown = useCallback(() => {
+    if (powerTimeoutRef.current !== null) {
+      window.clearTimeout(powerTimeoutRef.current);
+      powerTimeoutRef.current = null;
+    }
+    if (powerIntervalRef.current !== null) {
+      window.clearInterval(powerIntervalRef.current);
+      powerIntervalRef.current = null;
+    }
+  }, []);
+
+  const clearPowerTimers = useCallback(() => {
+    stopPowerCountdown();
+    powerExpiryRef.current = 0;
+  }, [stopPowerCountdown]);
+
+  const resetPowerState = useCallback(() => {
+    clearPowerTimers();
+    setPowerTimerMs(0);
+    setPowerDurationMs(0);
+    setPowerTier(0);
+    powerExpiryRef.current = 0;
+  }, [clearPowerTimers]);
+
+  const startPowerTimer = useCallback(
+    (duration: number, options?: { preserveDuration?: boolean }) => {
+      if (duration <= 0) return;
+      const preserveDuration = options?.preserveDuration ?? false;
+      stopPowerCountdown();
+      if (!preserveDuration) {
+        setPowerDurationMs(duration);
+      }
+      powerExpiryRef.current = Date.now() + duration;
+      setPowerTimerMs(duration);
+
+      powerTimeoutRef.current = window.setTimeout(() => {
+        setBulletLevel(0);
+        resetPowerState();
+      }, duration);
+
+      powerIntervalRef.current = window.setInterval(() => {
+        if (useGameStore.getState().isPaused) return;
+        const remaining = Math.max(0, powerExpiryRef.current - Date.now());
+        setPowerTimerMs(remaining);
+        if (remaining <= 0 && powerIntervalRef.current !== null) {
+          window.clearInterval(powerIntervalRef.current);
+          powerIntervalRef.current = null;
+        }
+      }, 80);
+    },
+    [resetPowerState, setBulletLevel, setPowerDurationMs, setPowerTimerMs, stopPowerCountdown]
+  );
+  useEffect(() => {
+    const ratio =
+      powerDurationMs > 0 ? Math.max(0, Math.min(1, powerTimerMs / powerDurationMs)) : 0;
+    document.documentElement.style.setProperty("--power-border-progress", ratio.toString());
+  }, [powerDurationMs, powerTimerMs]);
 
   useEffect(() => {
-    if (!userId || isGuest) {
-      setPlayerRank(null);
-      return;
+    setMovementSpeedMultiplier(isPowerActive ? POWER_MOVEMENT_MULTIPLIER : 1);
+  }, [isPowerActive, setMovementSpeedMultiplier]);
+
+  useEffect(() => {
+    if (isPaused) {
+      pausedPowerRemainingRef.current = powerTimerMs > 0 ? powerTimerMs : null;
+      stopPowerCountdown();
+    } else if (pausedPowerRemainingRef.current !== null) {
+      startPowerTimer(pausedPowerRemainingRef.current, { preserveDuration: true });
+      pausedPowerRemainingRef.current = null;
     }
+  }, [isPaused, powerTimerMs, startPowerTimer, stopPowerCountdown]);
+  useEffect(() => {
+    if (playerDeathAnimationClown == null) return;
+    const timeout = window.setTimeout(() => {
+      setPlayerDeathAnimationClown(null);
+    }, deathSequenceDurationMs);
+    return () => window.clearTimeout(timeout);
+  }, [deathSequenceDurationMs, playerDeathAnimationClown]);
 
-    let cancelled = false;
-
-    const loadPlayerStats = async () => {
-      try {
-        const profileRes = await fetch(PLAYER_PROFILE_URL, {
-          method: "POST",
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ user_id: userId }),
-        });
-        if (!profileRes.ok) {
-          throw new Error(`Profile request failed (${profileRes.status})`);
-        }
-        const payload = await profileRes.json();
-        const profile = payload?.profile ?? payload ?? {};
-        const rank = Number(profile?.rank) || 0;
-
-        if (!cancelled) {
-          setPlayerRank(rank);
-        }
-      } catch (error) {
-        console.error("Failed to load player HUD stats:", error);
-        if (!cancelled) {
-          setPlayerRank(0);
-        }
-      }
-    };
-
-    loadPlayerStats();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isGuest, userId]);
 
   const getHealthRangeForWave = useCallback((wave: number): [number, number] => {
     if (wave >= 5) {
@@ -128,17 +182,15 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
     return [min, min + 100];
   }, []);
 
-  const getAvailableTiers = useCallback((wave: number): number[] => {
-    if (wave >= 5) return [1, 2, 3, 4, 5, 6];
-    if (wave >= 3) return [1, 2, 3, 4];
-    return [1, 2];
+  const getAvailableTiers = useCallback((): number[] => {
+    return [1, 2, 3, 4, 5, 6];
   }, []);
 
   const generateUniquePositions = useCallback(
     (
       count: number,
-      minDistanceFromPlayer = 5,
-      minDistanceBetweenObjects = 5,
+      minDistanceFromPlayer = 10,
+      minDistanceBetweenObjects = 20,
       yPosition = GROUND_TOP,
       existingObjects: [number, number, number][] = [],
       minVerticalDistance = 1
@@ -148,16 +200,36 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
       const distance3D = (a: [number, number, number], b: [number, number, number]) =>
         Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
 
+      const usableRadius = groundSize * 0.5;
+      const jitterRadius = groundSize * 0.4;
+      const gapBuffer = 1.5;
+      const maxCoord = groundSize * 0.5 - 2;
+      const clampAxis = (value: number) => {
+        if (Math.abs(value) < gapBuffer) {
+          const direction = value >= 0 ? 1 : -1;
+          return direction * gapBuffer;
+        }
+        return Math.max(-maxCoord, Math.min(maxCoord, value));
+      };
+      const clampToPlayArea = (x: number, z: number) => {
+        return [clampAxis(x), yPosition, clampAxis(z)] as [number, number, number];
+      };
+      const randomLocation = () => {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.sqrt(Math.random()) * usableRadius;
+        return [Math.cos(angle) * distance, yPosition, Math.sin(angle) * distance] as [number, number, number];
+      };
+
       for (let i = 0; i < count; i += 1) {
         let selectedPosition: [number, number, number] | null = null;
-        let fallbackPosition: [number, number, number] = [playerStartPosition[0], yPosition, playerStartPosition[2]];
+        let fallbackPosition: [number, number, number] = randomLocation();
 
         for (let attempts = 0; attempts < 1000; attempts += 1) {
-          const candidate: [number, number, number] = [
-            Math.random() * groundSize - groundSize / 2,
-            yPosition,
-            Math.random() * groundSize - groundSize / 2,
-          ];
+          const center = randomLocation();
+          const angle = Math.random() * Math.PI * 2;
+          const radiusBias = Math.sqrt(Math.random());
+          const offset = radiusBias * jitterRadius;
+          const candidate = clampToPlayArea(center[0] + Math.cos(angle) * offset, center[2] + Math.sin(angle) * offset);
           fallbackPosition = candidate;
 
           const tooCloseToPlayer = distance3D(candidate, playerStartPosition) < minDistanceFromPlayer;
@@ -181,15 +253,38 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
     [groundSize, playerStartPosition]
   );
 
-  const pushNotification = useCallback((message: string) => {
-    const id = Date.now() + Math.random();
-    setNotifications((prev) => [...prev, { id, message }]);
-    const timeout = window.setTimeout(() => {
-      setNotifications((prev) => prev.filter((notification) => notification.id !== id));
-      notificationTimeoutsRef.current.delete(id);
-    }, 3200);
-    notificationTimeoutsRef.current.set(id, timeout);
-  }, []);
+const getDeathAnimation = (tier: number): string => {
+  if (tier >= 5) return "die_three";
+  if (tier >= 3) return "die_two";
+  if (tier >= 2) return "die_two";
+  return "die_one";
+};
+
+const pushNotification = (
+  message: string,
+  setNotifications: React.Dispatch<React.SetStateAction<{ id: number; message: string }[]>>,
+  notificationTimeoutsRef: React.MutableRefObject<Map<number, number>>,
+) => {
+  const id = Date.now() + Math.random();
+  setNotifications((prev) => [...prev, { id, message }]);
+  const timeout = window.setTimeout(() => {
+    setNotifications((prev) => prev.filter((notification) => notification.id !== id));
+    notificationTimeoutsRef.current.delete(id);
+  }, 3200);
+  notificationTimeoutsRef.current.set(id, timeout);
+};
+
+const CorruptionTicker = ({ onOverflow, paused }: { onOverflow: (wave: number) => void; paused: boolean }) => {
+  const tickCorruption = useGameStore((state) => state.tickCorruption);
+  useFrame((_, delta) => {
+    if (paused) return;
+    const { overflowed, wave } = tickCorruption(delta);
+    if (overflowed) {
+      onOverflow(wave);
+    }
+  });
+  return null;
+};
 
   const spawnWave = useCallback(
     (waveNumber: number) => {
@@ -209,6 +304,7 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           position: pos,
           isAlive: true,
           health: Math.min(600, Math.max(100, normalized)),
+          state: "alive" as const,
         };
       });
 
@@ -220,8 +316,10 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
         [...environmentObstacles, ...positions],
       );
 
-      setCurrentWave(waveNumber);
+      setWave(waveNumber);
       setLogoPositions(availableLogoPositions);
+      setLogoGeneration((prev) => prev + 1);
+      setCollectedLogos(0);
       setClownData(newClowns);
 
       const multiplier = baseWaveSpeed + (waveNumber - 1) * waveSpeedIncrement;
@@ -232,8 +330,11 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
       clownsPerWave,
       generateUniquePositions,
       getHealthRangeForWave,
+      setWave,
+      setCollectedLogos,
       setClownData,
       setLogoPositions,
+      setLogoGeneration,
       totalLogos,
       waveSpeedIncrement,
     ],
@@ -241,14 +342,16 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
 
   const initializeGame = useCallback(() => {
     resetGame();
+    resetPowerState();
     milestoneAchievedRef.current.clear();
     setNotifications([]);
-    setCurrentWave(1);
+    setWave(1);
     setWaveSpeedMultiplier(baseWaveSpeed);
     if (spawnTimeoutRef.current !== null) {
       window.clearTimeout(spawnTimeoutRef.current);
       spawnTimeoutRef.current = null;
     }
+    clearPowerTimers();
 
     const blackBoxes = generateUniquePositions(totalBlackBoxes, 5, 5, GROUND_TOP);
     const dieBoxes = generateUniquePositions(totalDieBoxes, 5, 5, GROUND_TOP, blackBoxes);
@@ -269,26 +372,46 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
     spawnWave(1);
   }, [
     baseWaveSpeed,
+    clearPowerTimers,
     generateUniquePositions,
     resetGame,
+    resetPowerState,
     spawnWave,
+    setWave,
     totalBlackBoxes,
     totalDieBoxes,
     totalLogos,
     totalMovableBlackBoxes,
   ]);
 
-  const handlePlayerDie = () => {
+  const handlePlayerDie = useCallback(({ attackerId, immediate }: { attackerId: number | null; immediate?: boolean }) => {
+    if ((isPowerActive && !immediate) || isGameOver || gameOverTimeoutRef.current !== null) {
+      return;
+    }
+    setControlsLocked(true);
+    setPlayerDeathAnimationClown(attackerId);
     dieSound.currentTime = 0;
     dieSound.play().catch((e) => console.warn("❌ die.mp3 failed to play:", e));
-    setGameOver("lose");
-  };
+    if (attackerId === null || immediate) {
+      setGameOver("lose");
+      return;
+    }
+    const delay = Math.max(1500, deathSequenceDurationMs);
+    gameOverTimeoutRef.current = window.setTimeout(() => {
+      setGameOver("lose");
+      gameOverTimeoutRef.current = null;
+    }, delay);
+  }, [deathSequenceDurationMs, dieSound, isGameOver, isPowerActive, setControlsLocked, setGameOver]);
 
   useEffect(() => {
     const timeouts = notificationTimeoutsRef.current;
     return () => {
       if (spawnTimeoutRef.current !== null) {
         window.clearTimeout(spawnTimeoutRef.current);
+      }
+      if (gameOverTimeoutRef.current !== null) {
+        window.clearTimeout(gameOverTimeoutRef.current);
+        gameOverTimeoutRef.current = null;
       }
       timeouts.forEach((timeout) => window.clearTimeout(timeout));
       timeouts.clear();
@@ -297,7 +420,32 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
 
   useEffect(() => {
     initializeGame();
-  }, [initializeGame]);
+
+    return () => {
+      clearPowerTimers();
+    };
+  }, [clearPowerTimers, initializeGame]);
+
+  useEffect(() => {
+    if (isGameOver) {
+      resetPowerState();
+    }
+  }, [isGameOver, resetPowerState]);
+
+  useEffect(() => {
+    const palettes: Record<number, { color: string; glow: string; gradient: string }> = {
+      0: { color: "rgba(255,255,255,0.35)", glow: "rgba(255,255,255,0.12)", gradient: "none" },
+      2: { color: "rgba(0,163,255,0.95)", glow: "rgba(0,163,255,0.35)", gradient: "radial-gradient(circle at center, rgba(0,163,255,0.18), transparent 55%)" },
+      3: { color: "rgba(15,231,87,0.95)", glow: "rgba(15,231,87,0.38)", gradient: "radial-gradient(circle at center, rgba(15,231,87,0.2), transparent 55%)" },
+      4: { color: "rgba(255,153,0,0.95)", glow: "rgba(255,153,0,0.45)", gradient: "radial-gradient(circle at center, rgba(255,153,0,0.22), transparent 55%)" },
+      5: { color: "rgba(255,255,255,0.95)", glow: "rgba(255,255,255,0.5)", gradient: "radial-gradient(circle at center, rgba(255,255,255,0.25), transparent 55%)" },
+      6: { color: "rgba(255,255,255,0.95)", glow: "rgba(255,255,255,0.5)", gradient: "radial-gradient(circle at center, rgba(255,255,255,0.25), transparent 55%)" },
+    };
+    const palette = palettes[powerTier] ?? palettes[0];
+    document.documentElement.style.setProperty("--power-border-color", palette.color);
+    document.documentElement.style.setProperty("--power-border-glow", palette.glow);
+    document.documentElement.style.setProperty("--power-border-gradient", palette.gradient);
+  }, [powerTier]);
 
   useEffect(() => {
     let active = true;
@@ -339,53 +487,169 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
       if (totalScore >= score && !milestoneAchievedRef.current.has(place)) {
         milestoneAchievedRef.current.add(place);
         const placeLabel = place === 1 ? "1st" : place === 2 ? "2nd" : "3rd";
-        pushNotification(`🔥 You're now in ${placeLabel} place on the leaderboard!`);
+        pushNotification(`🔥 You're now in ${placeLabel} place on the leaderboard!`, setNotifications, notificationTimeoutsRef);
       }
     });
-  }, [leaderboardMilestones, pushNotification, totalScore]);
+  }, [leaderboardMilestones, totalScore]);
 
   const handleLogoCollect = useCallback(
     (tier: number) => {
-      setCollectedLogos((prev) => prev + 1);
+      const prevCollected = useGameStore.getState().collectedLogos;
+      const nextCollected = prevCollected + 1;
+      setCollectedLogos(nextCollected);
+
+      if (nextCollected >= totalLogos) {
+        const refreshedLogos = generateUniquePositions(
+          totalLogos,
+          5,
+          5,
+          GROUND_TOP,
+          environmentObstaclesRef.current,
+        );
+        setLogoPositions(refreshedLogos);
+        setLogoGeneration((prev) => prev + 1);
+        setCollectedLogos(0);
+      }
+      if (tier <= 1) {
+        setBulletLevel(0);
+        resetPowerState();
+        return;
+      }
+
       const index = Math.max(0, Math.min(tier - 1, weaponConfigs.length - 1));
       setBulletLevel(index);
+      setPowerTier(tier);
+
+      const duration = Math.max(6000, 3000 * tier);
+      startPowerTimer(duration);
     },
-    [setCollectedLogos, setBulletLevel]
+    [
+      generateUniquePositions,
+      resetPowerState,
+      setBulletLevel,
+      setCollectedLogos,
+      setLogoGeneration,
+      setLogoPositions,
+      setPowerTier,
+      startPowerTimer,
+      totalLogos,
+    ]
   );
 
   const handleClownKill = useCallback(
-    (id: number) => {
+    (id: number, options?: { lookAtPlayer?: boolean }) => {
       let shouldSpawnNextWave = false;
+      const animation = getDeathAnimation(powerTier);
+      let dyingPosition: [number, number, number] | null = null;
+      let lookAtTarget: [number, number, number] | undefined;
 
       setClownData((prev) => {
-        const updated = prev.map((c) => (c.id === id ? { ...c, isAlive: false } : c));
+        const updated = prev.map((c) => {
+          if (c.id === id) {
+            dyingPosition = c.position;
+            return { ...c, isAlive: false, state: "removed" as const, deathAnimation: animation };
+          }
+          return c;
+        });
         if (updated.length && updated.every((c) => !c.isAlive)) {
           shouldSpawnNextWave = true;
         }
         return updated;
       });
 
-      increaseKills();
+      const totalKills = killClownStat();
+      if (totalKills % 10 === 0) {
+        const level = totalKills / 10 + 1;
+        pushNotification(`⚔️ Wave ${level} reached!`, setNotifications, notificationTimeoutsRef);
+        const refreshedLogos = generateUniquePositions(
+          totalLogos,
+          5,
+          5,
+          GROUND_TOP,
+          environmentObstaclesRef.current,
+        );
+        setLogoPositions(refreshedLogos);
+        setLogoGeneration((prev) => prev + 1);
+        setCollectedLogos(0);
+        setPowerTier(0);
+        setPowerTimerMs(0);
+        clearPowerTimers();
+      }
+
+      if (dyingPosition) {
+        if (options?.lookAtPlayer && playerRef.current) {
+          const playerPosition = playerRef.current.getPosition();
+          lookAtTarget = [playerPosition.x, playerPosition.y, playerPosition.z];
+        }
+        setDyingClowns((prev) => [
+          ...prev,
+          { id: `${id}-${Date.now()}`, position: dyingPosition!, animation, lookAtTarget },
+        ]);
+      }
 
       if (shouldSpawnNextWave) {
-        const nextWave = currentWave + 1;
+        const waveToSpawn = advanceWave();
         if (spawnTimeoutRef.current !== null) {
           window.clearTimeout(spawnTimeoutRef.current);
         }
         spawnTimeoutRef.current = window.setTimeout(() => {
-          spawnWave(nextWave);
+          spawnWave(waveToSpawn);
         }, 850);
       }
     },
-    [currentWave, increaseKills, setClownData, spawnWave]
+    [
+      advanceWave,
+      generateUniquePositions,
+      killClownStat,
+      playerRef,
+      powerTier,
+      setClownData,
+      setCollectedLogos,
+      setLogoGeneration,
+      setLogoPositions,
+      spawnWave,
+      totalLogos,
+    ]
+  );
+
+  const handleOverflowRespawn = useCallback(
+    (wave: number) => {
+      if (isGameOver) return;
+      if (spawnTimeoutRef.current !== null) {
+        window.clearTimeout(spawnTimeoutRef.current);
+        spawnTimeoutRef.current = null;
+      }
+      pushNotification(
+        `☣️ Corruption overload! Falling back to Wave ${wave}.`,
+        setNotifications,
+        notificationTimeoutsRef,
+      );
+      spawnWave(wave);
+    },
+    [isGameOver, notificationTimeoutsRef, setNotifications, spawnWave]
   );
 
   const handleRestart = () => {
+    if (gameOverTimeoutRef.current !== null) {
+      window.clearTimeout(gameOverTimeoutRef.current);
+      gameOverTimeoutRef.current = null;
+    }
+    clearPowerTimers();
+    resetPowerState();
+    setControlsLocked(false);
+    setPlayerDeathAnimationClown(null);
     initializeGame();
+    playerRef.current?.resetPosition?.(playerStartPosition);
+    setSessionId((prev) => prev + 1);
   };
 
-  if (isGameOver) {
-      return (
+  const handleDeathComplete = useCallback((entryId: string) => {
+    setDyingClowns((prev) => prev.filter((entry) => entry.id !== entryId));
+  }, []);
+
+  return (
+    <>
+      {isGameOver && (
         <GameMenu
           title="💀 Game Over!"
           onRestart={handleRestart}
@@ -393,16 +657,9 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           onVisitPortfolio={() => {
             window.open("https://www.crystalthedeveloper.ca", "_blank");
           }}
-          playerRank={playerRank}
+          playerRank={null}
         />
-      );
-  }
-
-  const detectionRadius = Math.max(6, 14 - (currentWave - 1) * 1.1);
-  const aggressionFactor = Math.min(3.5, 1 + (currentWave - 1) * 0.22);
-
-  return (
-    <>
+      )}
       {notifications.length > 0 && (
         <div className="notification-stack">
           {notifications.map((notification) => (
@@ -412,47 +669,70 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           ))}
         </div>
       )}
-      <Scoreboard rank={playerRank ?? 0} />
-      <Canvas shadows camera={{ position: [0, 10, 25], fov: 50 }} style={{ height: "100%", width: "100%" }}>
+      <Canvas
+        key={sessionId}
+        shadows
+        camera={{ position: [0, 10, 25], fov: 50 }}
+        style={{ height: "100%", width: "100%" }}
+      >
         <Suspense fallback={<Html center>Loading...</Html>}>
           <color attach="background" args={["#000000"]} />
           <fog attach="fog" args={["#0a0a0a", 25, 120]} />
           <Environment files="/hdr/kloofendal_48d_partly_cloudy_puresky_4k.hdr" background backgroundIntensity={0.1} />
-          <Physics gravity={[0, -80, 0]}>
-            <Player ref={playerRef} bulletsRef={bulletsRef} onDie={handlePlayerDie} />
+          <Physics gravity={[0, -48, 0]}>
+            <CorruptionTicker onOverflow={handleOverflowRespawn} paused={isPaused} />
+            <Player
+              ref={playerRef}
+              onDie={handlePlayerDie}
+              isPowerActive={isPowerActive}
+              onPowerKill={handleClownKill}
+            />
             <Ground size={[groundSize, groundSize]} />
+            <LogoShowcase />
 
-            {clownData.map(
-              (clown) =>
-                clown.isAlive && (
+            {clownData
+              .filter((clown) => clown.isAlive)
+              .map((clown) => {
+                const isKillingPlayer = playerDeathAnimationClown === clown.id;
+                const lookTarget =
+                  isKillingPlayer && playerRef.current
+                    ? playerRef.current.getPosition()
+                    : null;
+                return (
                   <Clown
                     key={clown.id}
-                    id={clown.id}
                     playerRef={playerRef}
-                    bulletsRef={bulletsRef}
-                    position={clown.position}
+                    position={[clown.position[0], clown.position[1], clown.position[2]]}
+                    model={clownModel}
+                    animations={clownAnimations}
+                    speedMultiplier={waveSpeedMultiplier}
+                    forcedAnimation={isKillingPlayer ? "player_die" : null}
+                    deathLookTarget={lookTarget ? [lookTarget.x, lookTarget.y, lookTarget.z] : null}
+                  />
+                );
+              })}
+
+            {dyingClowns.map((entry) => (
+              <DyingClown
+                key={entry.id}
+                id={entry.id}
+                position={entry.position}
                 model={clownModel}
                 animations={clownAnimations}
-                speedMultiplier={waveSpeedMultiplier}
-                detectionRadius={detectionRadius}
-                aggression={aggressionFactor}
-                initialHealth={clown.health}
-                onKill={handleClownKill}
-                onCatch={handlePlayerDie}
+                animationName={entry.animation}
+                lookAtTarget={entry.lookAtTarget}
+                onComplete={handleDeathComplete}
               />
-            )
-        )}
+            ))}
 
             {logoPositions.map((position, index) => {
-              const tiers = getAvailableTiers(currentWave);
+              const tiers = getAvailableTiers();
               const tier = tiers[index % tiers.length];
               return (
                 <LogoItem
-                  key={index}
+                  key={`${logoGeneration}-${index}`}
                   playerRef={playerRef}
-                  position={[position[0], GROUND_TOP, position[2]]}
-                  model={logosModel}
-                  logoIndex={index % logoChildrenCount}
+                  position={[position[0], GROUND_TOP + 0.1, position[2]]}
                   displayLevel={tier}
                   onCollect={handleLogoCollect}
                 />
@@ -471,7 +751,7 @@ function GameCanvas({ userId, isGuest }: GameCanvasProps) {
           </Physics>
         </Suspense>
       </Canvas>
-      <PlayerControls onShoot={() => playerRef.current?.shoot()} />
+      <PlayerControls powerTimerMs={powerTimerMs} hideControls={playerDeathAnimationClown !== null} />
     </>
   );
 }

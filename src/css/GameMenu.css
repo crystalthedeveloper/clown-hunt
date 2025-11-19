@@ -3,13 +3,14 @@
 .game-menu {
   position: fixed;
   inset: 0;
-  background: #000;
+  background: rgba(0, 0, 0, 0.92);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
-  z-index: 1000;
+  z-index: 4000;
   font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  pointer-events: auto;
 }
 
 .game-menu-content {
@@ -97,17 +98,6 @@
 .action-button:hover {
   filter: brightness(1.08);
   transform: translateY(-1px);
-}
-
-.signout-button {
-  background: #0e0e0e;
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
-}
-
-.signout-button:hover {
-  filter: brightness(1.06);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.45);
 }
 
 .status-message,

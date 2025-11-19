@@ -186,17 +186,6 @@ export function GameMenu({
     }
   };
 
-  const handleSignOut = async () => {
-    if (isGuest) {
-      localStorage.removeItem("guestProfile");
-      window.location.reload();
-      return;
-    }
-
-    localStorage.removeItem("playerProfile");
-    window.location.reload();
-  };
-
   return (
     <div className="game-menu">
       <div className="game-menu-content">
@@ -226,14 +215,8 @@ export function GameMenu({
         <button className="menu-button action-button" onClick={onRestart}>
           Restart
         </button>
-        <button
-          className="menu-button action-button"
-          onClick={onVisitPortfolio}
-        >
+        <button className="menu-button action-button" onClick={onVisitPortfolio}>
           Corporate Site
-        </button>
-        <button className="menu-button signout-button" onClick={handleSignOut}>
-          Sign Out
         </button>
 
         {loadingRank && <p className="status-message">Checking leaderboard…</p>}

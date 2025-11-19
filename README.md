@@ -6,13 +6,12 @@ Wave-based arena shooter where you battle an endless parade of murderous clowns,
 
 ## Key Features
 
-- **Futuristic arena** – Reflective black floor, space HDR lighting, and moody fog for a cinematic feel.
-- **Procedural terrain** – Heightfield-aware physics keeps movement smooth across rolling hills.
+- **Minimalist arena** – Split-floor tiles, matte-black boxes, monochrome UI, and cinematic fog.
 - **Wave system** – Increasingly aggressive clowns spawn every round with escalating health and speed.
-- **Power logos** – Collect logos each wave to unlock higher-tier weapons and damage bonuses.
-- **Reactive HUD** – In-game notifications, scoreboard, and minimal UI that responds to events.
+- **Power logos** – Collect logos each wave to unlock higher-tier weapons, temporary speed boosts, and power timers.
+- **Reactive HUD** – In-game notifications, scoreboard, and power meter that respond to events.
 - **Leaderboards & profiles** – AWS Lambda + DynamoDB endpoints persist WordPress player and guest progress plus the global leaderboard.
-- **Token-only authentication** – WordPress issues temporary player/guest tokens; the game auto-logs users in with no on-screen forms.
+- **WordPress-driven authentication** – Users authenticate on the WordPress site; the standalone build simply validates their tokens.
 - **Cross-device controls** – Desktop and touch-friendly virtual trackpad with accessible keyboard support.
 
 ---
@@ -61,7 +60,7 @@ Wave-based arena shooter where you battle an endless parade of murderous clowns,
 
 - Node.js ≥ 18.0
 - npm ≥ 9 (bundled with Node 18+)
-- WordPress REST endpoints that issue 5-minute JSON tokens:
+- WordPress REST endpoints that issue short-lived JSON tokens:
   - `POST /wp-json/clownhunt/v1/validate_token`
   - `POST /wp-json/clownhunt/v1/validate_guest_token`
 - AWS API Gateway / Lambda endpoints wired to DynamoDB tables:
@@ -91,7 +90,8 @@ Wave-based arena shooter where you battle an endless parade of murderous clowns,
    VITE_AWS_SAVE_GUEST_PROFILE_URL=https://your-api/save_guest_profile
    VITE_AWS_LOAD_GUEST_PROFILE_URL=https://your-api/load_guest_profile
    VITE_AWS_LEADERBOARD_URL=https://your-api/leaderboard
-    VITE_WORDPRESS_API_BASE=https://your-wordpress-site.com
+   VITE_WORDPRESS_API_BASE=https://your-wordpress-site.com
+   VITE_BYPASS_AUTH=false
    ```
 
 3. **Run the dev server**
@@ -153,7 +153,7 @@ On load the game:
 2. Uses the returned `user_id`/`guest_id` to fetch the latest stats from AWS.
 3. Stores the combined profile in `localStorage`, auto-logging the player.
 
-If no token is present, the game shows a message instructing the user to launch it from the main site.
+If no token is present, the game displays a monochrome prompt with a “Go to Login” button that links back to the WordPress login page (`https://www.crystalthedeveloper.ca/log-in`). Set `VITE_BYPASS_AUTH=true` locally if you need to skip this prompt during development.
 
 ---
 
