@@ -11,7 +11,8 @@ const token = params.get("clownhunt_token");
 if (token) {
   localStorage.setItem("clownhunt_token", token);
   if (window.location.search.includes("clownhunt_token")) {
-    history.replaceState({}, "", window.location.pathname);
+    const newUrl = window.location.pathname;
+    setTimeout(() => history.replaceState({}, "", newUrl), 500);
   }
 }
 

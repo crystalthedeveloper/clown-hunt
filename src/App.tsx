@@ -128,14 +128,13 @@ function App() {
         }
         const data = await response.json();
         if (cancelled) return;
-        if (data?.status === "success" && data?.user?.id) {
-          const validatedUser = data.user;
+        if (data?.status === "success" && data?.user_id) {
           setUser({
-            id: String(validatedUser.id),
-            fullName: validatedUser.full_name || validatedUser.name || "Player",
-            email: validatedUser.email,
-            isGuest: Boolean(validatedUser.is_guest),
-            kills: validatedUser.kills ?? 0,
+            id: String(data.user_id),
+            fullName: `${data.first_name ?? ""} ${data.last_name ?? ""}`.trim() || data.full_name || "Player",
+            email: data.email,
+            isGuest: Boolean(data.is_guest),
+            kills: data.kills ?? 0,
           });
           return;
         }
