@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import "./App.css";
 import WelcomeScreen from "./components/WelcomeScreen";
 import type { StoredGuestProfile, StoredPlayerProfile } from "./types/user";
@@ -20,6 +20,8 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [gameStarted, setGameStarted] = useState(false);
   const setProfileStats = useGameStore((state) => state.setProfileStats);
+  const killsLoaded = useGameStore((state) => state.killsLoaded);
+  const resetProfileStats = useGameStore((state) => state.resetProfileStats);
 
   useEffect(() => {
     const storedPlayerRaw = localStorage.getItem("playerProfile");
@@ -135,8 +137,21 @@ function App() {
     };
   }, [user]);
 
+  const lastProfileIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const currentId = user?.id ?? null;
+    if (currentId !== lastProfileIdRef.current) {
+      resetProfileStats();
+      lastProfileIdRef.current = currentId;
+    }
+  }, [resetProfileStats, user?.id]);
+
   useEffect(() => {
     if (!user) return;
+    if (gameStarted) return;
+    if (killsLoaded) return;
+
     if (user.isGuest) {
       setProfileStats(null, null);
       return;
@@ -153,7 +168,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [setProfileStats, user]);
+  }, [gameStarted, killsLoaded, setProfileStats, user]);
 
   if (loading) {
     return <div className="app__loading">Preparing session…</div>;

@@ -53,6 +53,7 @@ interface GameState {
   bulletPulse: number;
   profileKills: number | null;
   profileRank: number | null;
+  killsLoaded: boolean;
 
   // Computed scores
   logoScore: number;
@@ -73,6 +74,7 @@ interface GameState {
   handleCorruptionOverflow: () => number;
   setPaused: (paused: boolean) => void;
   setProfileStats: (kills: number | null, rank: number | null) => void;
+  resetProfileStats: () => void;
   resetGame: () => void;
 }
 
@@ -105,6 +107,7 @@ export const useGameStore = create<PlayerState & GameState>()(
     bulletPulse: 0,
     profileKills: null,
     profileRank: null,
+    killsLoaded: false,
 
     // Computed values
     get logoScore() {
@@ -197,6 +200,13 @@ export const useGameStore = create<PlayerState & GameState>()(
       set(() => ({
         profileKills: kills,
         profileRank: rank,
+        killsLoaded: true,
+      })),
+    resetProfileStats: () =>
+      set(() => ({
+        profileKills: null,
+        profileRank: null,
+        killsLoaded: false,
       })),
 
     setWave: (wave) =>
