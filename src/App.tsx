@@ -109,7 +109,9 @@ function App() {
 
   useEffect(() => {
     if (user) return;
-    const restBase: string | undefined = (window as { CLTDTheme?: { clownhuntRestBase?: string } }).CLTDTheme?.clownhuntRestBase;
+    const restBase =
+      new URLSearchParams(window.location.search).get("clownhunt_rest_base") ||
+      (window as { CLTDTheme?: { clownhuntRestBase?: string } }).CLTDTheme?.clownhuntRestBase;
     const token =
       new URLSearchParams(window.location.search).get("clownhunt_token") ||
       localStorage.getItem("clownhunt_token");
