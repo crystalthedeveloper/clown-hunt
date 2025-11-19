@@ -107,6 +107,49 @@ function App() {
     };
   }, [setProfileStats, user]);
 
+  useEffect(() => {
+    if (user) return;
+    const restBase: string | undefined = (window as { CLTDTheme?: { clownhuntRestBase?: string } }).CLTDTheme?.clownhuntRestBase;
+    const token =
+      new URLSearchParams(window.location.search).get("clownhunt_token") ||
+      localStorage.getItem("clownhunt_token");
+    if (!token || !restBase) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(
+          `${restBase}validate_token?token=${encodeURIComponent(token)}`,
+          { method: "GET" },
+        );
+        if (!response.ok) {
+          throw new Error(`Token validation failed with ${response.status}`);
+        }
+        const data = await response.json();
+        if (cancelled) return;
+        if (data?.status === "success" && data?.user?.id) {
+          const validatedUser = data.user;
+          setUser({
+            id: String(validatedUser.id),
+            fullName: validatedUser.full_name || validatedUser.name || "Player",
+            email: validatedUser.email,
+            isGuest: Boolean(validatedUser.is_guest),
+            kills: validatedUser.kills ?? 0,
+          });
+          return;
+        }
+        throw new Error("Token validation response missing user data");
+      } catch (error) {
+        console.warn("❌ Token validation failed:", error);
+        localStorage.removeItem("clownhunt_token");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   if (loading) {
     return <div className="app__loading">Preparing session…</div>;
   }
