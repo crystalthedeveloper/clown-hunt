@@ -133,6 +133,20 @@
   align-items: center;
 }
 
+.trackpad-meta-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.trackpad-meta-profile-item strong {
+  color: #ffe28a;
+}
+
 .trackpad-meta-pause {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.35);

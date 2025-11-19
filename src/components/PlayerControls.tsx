@@ -61,6 +61,8 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ powerTimerMs, hideContr
   const currentWave = useGameStore((state) => state.currentWave);
   const corruption = useGameStore((state) => state.corruption);
   const kills = useGameStore((state) => state.kills);
+  const profileKills = useGameStore((state) => state.profileKills);
+  const profileRank = useGameStore((state) => state.profileRank);
   const collectedLogos = useGameStore((state) => state.collectedLogos);
   const totalLogos = useGameStore((state) => state.totalLogos);
   const trackpadIndicatorRef = useRef<HTMLDivElement | null>(null);
@@ -402,6 +404,20 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ powerTimerMs, hideContr
           <div className="trackpad-meta-bar">
             <div className="trackpad-meta-fill" style={{ width: `${corruptionPercent}%` }} />
           </div>
+          {(profileKills !== null || profileRank !== null) && (
+            <div className="trackpad-meta-profile">
+              {profileKills !== null && (
+                <span className="trackpad-meta-profile-item">
+                  Total Kills: <strong>{profileKills}</strong>
+                </span>
+              )}
+              {profileRank !== null && (
+                <span className="trackpad-meta-profile-item">
+                  Rank: <strong>#{profileRank}</strong>
+                </span>
+              )}
+            </div>
+          )}
           <div className="trackpad-meta-caption">
             <span>Corruption Timer</span>
             <button className="trackpad-meta-pause" type="button" onClick={handlePauseToggle}>

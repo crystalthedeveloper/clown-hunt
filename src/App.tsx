@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import "./App.css";
 import WelcomeScreen from "./components/WelcomeScreen";
 import type { StoredGuestProfile, StoredPlayerProfile } from "./types/user";
+import { loadPlayerStatsAWS } from "./store/awsProfiles";
+import { useGameStore } from "./store/store";
 
 const GameCanvas = lazy(() => import("./components/GameCanvas"));
 const BYPASS_AUTH = (import.meta.env.VITE_BYPASS_AUTH ?? "false") === "true";
@@ -17,6 +19,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [gameStarted, setGameStarted] = useState(false);
+  const setProfileStats = useGameStore((state) => state.setProfileStats);
 
   useEffect(() => {
     const storedPlayerRaw = localStorage.getItem("playerProfile");
@@ -86,6 +89,23 @@ function App() {
       document.removeEventListener("gestureend", preventGestureZoom);
     };
   }, []);
+
+  useEffect(() => {
+    if (!user || user.isGuest) {
+      setProfileStats(null, null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const stats = await loadPlayerStatsAWS(user.id);
+      if (!cancelled) {
+        setProfileStats(stats?.kills ?? null, stats?.rank ?? null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setProfileStats, user]);
 
   if (loading) {
     return <div className="app__loading">Preparing session…</div>;

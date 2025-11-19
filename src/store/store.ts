@@ -51,6 +51,8 @@ interface GameState {
   bulletLevel: number;
   bulletDamage: number;
   bulletPulse: number;
+  profileKills: number | null;
+  profileRank: number | null;
 
   // Computed scores
   logoScore: number;
@@ -70,6 +72,7 @@ interface GameState {
   tickCorruption: (delta: number) => { overflowed: boolean; wave: number };
   handleCorruptionOverflow: () => number;
   setPaused: (paused: boolean) => void;
+  setProfileStats: (kills: number | null, rank: number | null) => void;
   resetGame: () => void;
 }
 
@@ -100,6 +103,8 @@ export const useGameStore = create<PlayerState & GameState>()(
     bulletLevel: 0,
     bulletDamage: weaponConfigs[0]?.damage ?? 0,
     bulletPulse: 0,
+    profileKills: null,
+    profileRank: null,
 
     // Computed values
     get logoScore() {
@@ -188,6 +193,11 @@ export const useGameStore = create<PlayerState & GameState>()(
         };
       }),
     upgradeBullet: () => undefined,
+    setProfileStats: (kills, rank) =>
+      set(() => ({
+        profileKills: kills,
+        profileRank: rank,
+      })),
 
     setWave: (wave) =>
       set(() => ({
@@ -289,6 +299,8 @@ export const useGameStore = create<PlayerState & GameState>()(
         totalBlackBoxes: state.totalBlackBoxes,
         totalDieBoxes: state.totalDieBoxes,
         totalMovableBlackBoxes: state.totalMovableBlackBoxes,
+        profileKills: state.profileKills,
+        profileRank: state.profileRank,
       })),
   }))
 );
