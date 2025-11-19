@@ -118,8 +118,9 @@ function App() {
     let cancelled = false;
     (async () => {
       try {
+        const normalizedBase = restBase.replace(/\/$/, "");
         const response = await fetch(
-          `${restBase}validate_token?token=${encodeURIComponent(token)}`,
+          `${normalizedBase}/validate_token?token=${encodeURIComponent(token)}`,
           { method: "GET" },
         );
         if (!response.ok) {
