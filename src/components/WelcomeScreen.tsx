@@ -43,7 +43,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart, userName, isGues
       <div className="welcome-box">
         <h1 className="welcome-box-header">Welcome, {resolveDisplayName(userName, isGuest)}</h1>
         <p>Prepare for Clown Hunt.</p>
-        {typeof topKills === "number" && topKills > 0 && (
+        {typeof topKills === "number" && (
           <div className="game-stats">
             <div className="stat-block">
               <span className="stat-label">Kills: </span>
