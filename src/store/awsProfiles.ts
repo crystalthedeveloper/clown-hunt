@@ -142,17 +142,33 @@ export async function loadPlayerStatsAWS(userId: string): Promise<PlayerProfileR
     const profile = result?.profile ?? result ?? {};
 
     const resolvedId = String(profile.user_id ?? normalizedId);
-    if (!resolvedId) return null;
 
     const kills = Number(profile.kills ?? 0);
-    let rank = typeof profile.rank === "number" ? profile.rank : null;
 
-    if (!Number.isFinite(rank)) {
-      const leaderboard = await loadLeaderboardAWS();
-      rank = leaderboard.find((entry) => entry.id === resolvedId)?.rank ?? null;
+    // ----------------------------------
+    //     SAFE RANK LOGIC (FINAL FIX)
+    // ----------------------------------
+
+    let rank: number | null = null;
+
+    // 1) DIRECT from AWS
+    if (typeof profile.rank === "number" && profile.rank > 0) {
+      rank = profile.rank;
     }
 
-    const normalizedRank = Number.isFinite(rank) ? (rank as number) : 1;
+    // 2) FALLBACK: Leaderboard position
+    if (rank === null) {
+      const leaderboard = await loadLeaderboardAWS();
+      const entry = leaderboard.find((p) => p.id === resolvedId);
+      if (entry && entry.rank > 0) {
+        rank = entry.rank;
+      }
+    }
+
+    // 3) FINAL fallback (always >= 1)
+    if (rank === null || !Number.isFinite(rank) || rank <= 0) {
+      rank = 1;
+    }
 
     return {
       user_id: resolvedId,
@@ -160,8 +176,9 @@ export async function loadPlayerStatsAWS(userId: string): Promise<PlayerProfileR
       first_name: profile.first_name ?? null,
       last_name: profile.last_name ?? null,
       kills: Number.isFinite(kills) ? kills : 0,
-      rank: normalizedRank,
+      rank
     };
+
   } catch (error) {
     console.error("❌ Failed to load player stats via AWS:", error);
     return null;
