@@ -197,15 +197,11 @@ export function GameMenu({
           </div>
           <div className="stat-block">
             <span className="stat-label">Current Rank</span>
-            <span className="stat-value">
-              {currentRank ? `#${currentRank}` : "Unranked"}
-            </span>
+            <span className="stat-value">#{currentRank ?? 1}</span>
           </div>
           <div className="stat-block">
             <span className="stat-label">New Rank if Saved</span>
-            <span className="stat-value">
-              {projectedRank ? `#${projectedRank}` : "Unranked"}
-            </span>
+            <span className="stat-value">#{projectedRank ?? currentRank ?? 1}</span>
           </div>
         </div>
 

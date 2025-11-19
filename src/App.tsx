@@ -6,7 +6,7 @@ import { loadPlayerStatsAWS } from "./store/awsProfiles";
 import { useGameStore } from "./store/store";
 
 const GameCanvas = lazy(() => import("./components/GameCanvas"));
-const BYPASS_AUTH = (import.meta.env.VITE_BYPASS_AUTH ?? "false") === "true";
+const BYPASS_AUTH = (import.meta.env.VITE_BYPASS_AUTH ?? "false") === "false";
 
 interface User {
   id: string;
