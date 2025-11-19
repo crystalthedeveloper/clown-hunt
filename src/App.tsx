@@ -98,7 +98,7 @@ function App() {
     return (
       <div className="welcome-screen auth-gate">
         <div className="welcome-box auth-box">
-          <h1 className="welcome-box-header">WordPress Sign In</h1>
+          <h1 className="welcome-box-header">Sign In</h1>
           <p className="auth-message">Please authenticate through WordPress to enter the arena.</p>
           <div className="welcome-actions">
             <button
