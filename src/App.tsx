@@ -101,10 +101,19 @@ function App() {
       setHasPendingToken(tokenExists);
     }
     if (!activeToken) return;
+    const restBaseParam = searchParams.get("clownhunt_rest_base");
     const restBase =
-      searchParams.get("clownhunt_rest_base") ||
+      restBaseParam ||
+      localStorage.getItem("clownhunt_rest_base") ||
       (window as { CLTDTheme?: { clownhuntRestBase?: string } }).CLTDTheme?.clownhuntRestBase;
-    if (!restBase) return;
+    if (!restBase) {
+      console.warn("❌ Missing clownhunt_rest_base; cannot validate token.");
+      setHasPendingToken(false);
+      return;
+    }
+    if (restBaseParam) {
+      localStorage.setItem("clownhunt_rest_base", restBaseParam);
+    }
 
     if (lastValidatedTokenRef.current === activeToken) {
       return;
