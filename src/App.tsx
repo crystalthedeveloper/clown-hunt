@@ -112,7 +112,13 @@ function App() {
         }
         const data = await response.json();
         if (cancelled) return;
-        if (data?.status === "success" && data?.user_id) {
+        if (data?.status === "success") {
+          const isGuest = Boolean(data.is_guest);
+          const resolvedId = isGuest ? data.guest_id ?? data.user_id : data.user_id;
+          if (!resolvedId) {
+            throw new Error("Token validation response missing user identifier");
+          }
+
           const firstName =
             typeof data.first_name === "string" && data.first_name.trim() ? data.first_name.trim() : undefined;
           const lastName =
@@ -120,22 +126,31 @@ function App() {
           const fullName = `${firstName ?? ""} ${lastName ?? ""}`.trim() || data.full_name || "Player";
 
           setUser({
-            id: String(data.user_id),
+            id: String(resolvedId),
             fullName,
             email: data.email,
-            isGuest: Boolean(data.is_guest),
-            firstName,
-            lastName,
+            isGuest,
+            firstName: isGuest ? undefined : firstName,
+            lastName: isGuest ? undefined : lastName,
           });
 
-          if (!data.is_guest) {
+          if (!isGuest) {
             const storedProfile: StoredPlayerProfile = {
-              id: String(data.user_id),
+              id: String(resolvedId),
               email: data.email ?? undefined,
               firstName,
               lastName,
             };
             localStorage.setItem("playerProfile", JSON.stringify(storedProfile));
+          } else {
+            const storedGuest: StoredGuestProfile = {
+              id: String(resolvedId),
+              email: data.email ?? undefined,
+              fullName,
+              kills: typeof data.kills === "number" ? data.kills : undefined,
+              rank: typeof data.rank === "number" ? data.rank : undefined,
+            };
+            localStorage.setItem("guestProfile", JSON.stringify(storedGuest));
           }
           return;
         }
