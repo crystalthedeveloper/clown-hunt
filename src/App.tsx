@@ -88,12 +88,15 @@ function App() {
 
   useEffect(() => {
     if (user) return;
+    const searchParams = new URLSearchParams(window.location.search);
     const restBase =
-      new URLSearchParams(window.location.search).get("clownhunt_rest_base") ||
+      searchParams.get("clownhunt_rest_base") ||
       (window as { CLTDTheme?: { clownhuntRestBase?: string } }).CLTDTheme?.clownhuntRestBase;
     const token =
-      new URLSearchParams(window.location.search).get("clownhunt_token") ||
-      localStorage.getItem("clownhunt_token");
+      searchParams.get("clownhunt_token") ||
+      searchParams.get("clownhunt_guest_token") ||
+      localStorage.getItem("clownhunt_token") ||
+      localStorage.getItem("clownhunt_guest_token");
     if (!token || !restBase) return;
 
     let cancelled = false;
@@ -140,6 +143,7 @@ function App() {
       } catch (error) {
         console.warn("❌ Token validation failed:", error);
         localStorage.removeItem("clownhunt_token");
+        localStorage.removeItem("clownhunt_guest_token");
       }
     })();
 
