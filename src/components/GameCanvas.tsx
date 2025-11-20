@@ -18,8 +18,13 @@ import { useGameStore } from "../store/store";
 import { loadLeaderboardAWS } from "../store/awsProfiles";
 import { weaponConfigs } from "../config/weapons";
 import { GROUND_TOP } from "../config/world";
+import type { SessionUser } from "../types/user";
 
-function GameCanvas() {
+interface GameCanvasProps {
+  user: SessionUser;
+}
+
+function GameCanvas({ user }: GameCanvasProps) {
   const playerRef = useRef<PlayerRef | null>(null);
 
   const setCollectedLogos = useGameStore((state) => state.setCollectedLogos);
@@ -42,6 +47,7 @@ function GameCanvas() {
   const setWave = useGameStore((state) => state.setWave);
   const advanceWave = useGameStore((state) => state.nextWave);
   const isPaused = useGameStore((state) => state.isPaused);
+  const playerRank = useGameStore((state) => state.profileRank);
 
   const { scene: clownModel, animations: clownAnimations } = useGLTF("/clown.glb");
   const playerDieAnimationDurationMs = useMemo(() => {
@@ -657,7 +663,8 @@ const CorruptionTicker = ({ onOverflow, paused }: { onOverflow: (wave: number) =
           onVisitPortfolio={() => {
             window.open("https://www.crystalthedeveloper.ca", "_blank");
           }}
-          playerRank={null}
+          playerRank={playerRank}
+          user={user}
         />
       )}
       {notifications.length > 0 && (

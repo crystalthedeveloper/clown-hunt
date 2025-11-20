@@ -1,7 +1,7 @@
 // components/GameMenu.tsx
 import { useEffect, useState } from "react";
 import { useGameStore } from "../store/store";
-import type { StoredGuestProfile, StoredPlayerProfile } from "../types/user";
+import type { SessionUser, StoredGuestProfile, StoredPlayerProfile } from "../types/user";
 import {
   loadLeaderboardAWS,
   saveGuestStatsAWS,
@@ -15,6 +15,7 @@ interface GameMenuProps {
   isVisible: boolean;
   onVisitPortfolio: () => void;
   playerRank?: number | null;
+  user: SessionUser | null;
 }
 
 export function GameMenu({
@@ -23,6 +24,7 @@ export function GameMenu({
   isVisible,
   onVisitPortfolio,
   playerRank,
+  user,
 }: GameMenuProps) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -30,37 +32,10 @@ export function GameMenu({
   const [projectedRank, setProjectedRank] = useState<number | null>(null);
   const [loadingRank, setLoadingRank] = useState(false);
   const kills = useGameStore((state) => state.kills);
-  const guestProfileRaw = localStorage.getItem("guestProfile");
-  const playerProfileRaw = localStorage.getItem("playerProfile");
-
-  const guestProfile: StoredGuestProfile | null = guestProfileRaw
-    ? (() => {
-        try {
-          return JSON.parse(guestProfileRaw);
-        } catch {
-          localStorage.removeItem("guestProfile");
-          return null;
-        }
-      })()
-    : null;
-
-  const playerProfile: StoredPlayerProfile | null = playerProfileRaw
-    ? (() => {
-        try {
-          return JSON.parse(playerProfileRaw);
-        } catch {
-          localStorage.removeItem("playerProfile");
-          return null;
-        }
-      })()
-    : null;
-
-  const isGuest = Boolean(!playerProfile && guestProfile);
-  const profileId = playerProfile?.id ?? guestProfile?.id ?? null;
-  const userName = playerProfile
-    ? [playerProfile.firstName, playerProfile.lastName].filter(Boolean).join(" ").trim() || "Player"
-    : guestProfile?.fullName || null;
-  const userType: "player" | "guest" = playerProfile ? "player" : "guest";
+  const isGuest = Boolean(user?.isGuest);
+  const profileId = user?.id ?? null;
+  const userName = user?.fullName ?? null;
+  const userType: "player" | "guest" = isGuest ? "guest" : "player";
 
   const playerRankOverride =
     typeof playerRank === "number" && Number.isFinite(playerRank) ? playerRank : null;
@@ -141,39 +116,57 @@ export function GameMenu({
     setError("");
     try {
       const targetRank = projectedRank ?? currentRank ?? null;
-      if (isGuest && guestProfile) {
+      if (!profileId || !user) {
+        throw new Error("Profile unavailable. Please refresh and try again.");
+      }
+
+      if (isGuest) {
         await saveGuestStatsAWS({
           pk: "GUEST",
-          guest_id: guestProfile.id,
-          email: guestProfile.email,
+          guest_id: profileId,
+          email: user.email,
           first_name: userName ?? "Guest",
           kills,
           rank: targetRank ?? undefined,
         });
-        const updated: StoredGuestProfile = {
-          ...guestProfile,
-          fullName: userName ?? guestProfile.fullName,
+        const updatedGuest: StoredGuestProfile = {
+          id: profileId,
+          email: user.email,
+          fullName: userName ?? "Guest",
           kills,
-          rank: targetRank ?? guestProfile.rank ?? null,
+          rank: targetRank ?? null,
         };
-        localStorage.setItem("guestProfile", JSON.stringify(updated));
-      } else if (playerProfile) {
+        localStorage.setItem("guestProfile", JSON.stringify(updatedGuest));
+      } else {
+        const resolvedFirstName =
+          (user.firstName && user.firstName.trim()) ||
+          (userName ? userName.split(/\s+/)[0] : null) ||
+          "Player";
+        const resolvedLastName =
+          (user.lastName && user.lastName.trim()) ||
+          (userName ? userName.split(/\s+/).slice(1).join(" ") : "") ||
+          undefined;
+
         await savePlayerStatsAWS({
           pk: "PROFILE",
-          user_id: playerProfile.id,
-          email: playerProfile.email,
-          first_name: playerProfile.firstName,
-          last_name: playerProfile.lastName,
+          user_id: profileId,
+          email: user.email,
+          first_name: resolvedFirstName,
+          last_name: resolvedLastName,
           kills,
           rank: targetRank ?? undefined,
         });
-        const updated: StoredPlayerProfile = {
-          ...playerProfile,
+        const updatedPlayer: StoredPlayerProfile = {
+          id: profileId,
+          email: user.email,
+          firstName: resolvedFirstName,
+          lastName: resolvedLastName,
           kills,
-          rank: targetRank ?? playerProfile.rank ?? null,
+          rank: targetRank ?? null,
         };
-        localStorage.setItem("playerProfile", JSON.stringify(updated));
+        localStorage.setItem("playerProfile", JSON.stringify(updatedPlayer));
       }
+
       if (typeof targetRank === "number") {
         setStatus(`Progress saved. Ranked #${targetRank}.`);
         setCurrentRank(targetRank);

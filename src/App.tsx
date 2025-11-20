@@ -1,22 +1,15 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import "./App.css";
 import WelcomeScreen from "./components/WelcomeScreen";
-import type { StoredGuestProfile, StoredPlayerProfile } from "./types/user";
+import type { SessionUser, StoredGuestProfile, StoredPlayerProfile } from "./types/user";
 import { loadPlayerStatsAWS } from "./store/awsProfiles";
 import { useGameStore } from "./store/store";
 
 const GameCanvas = lazy(() => import("./components/GameCanvas"));
-const BYPASS_AUTH = (import.meta.env.VITE_BYPASS_AUTH ?? "false") === "true";
+const BYPASS_AUTH = (import.meta.env.VITE_BYPASS_AUTH ?? "false") === "false";
 
-interface User {
-  id: string;
-  fullName: string;
-  email?: string;
-  isGuest?: boolean;
-  kills?: number;
-}
 function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [gameStarted, setGameStarted] = useState(false);
   const setProfileStats = useGameStore((state) => state.setProfileStats);
@@ -33,7 +26,8 @@ function App() {
           fullName: [storedPlayer.firstName, storedPlayer.lastName].filter(Boolean).join(" ").trim() || "Player",
           email: storedPlayer.email,
           isGuest: false,
-          kills: storedPlayer.kills ?? 0,
+          firstName: storedPlayer.firstName,
+          lastName: storedPlayer.lastName,
         });
         setLoading(false);
         return;
@@ -51,7 +45,6 @@ function App() {
           fullName: guest.fullName || "Player",
           email: guest.email,
           isGuest: true,
-          kills: guest.kills ?? 0,
         });
         setLoading(false);
         return;
@@ -68,7 +61,8 @@ function App() {
         fullName: "Dev Tester",
         email: "tester@example.com",
         isGuest: false,
-        kills: 0,
+        firstName: "Dev",
+        lastName: "Tester",
       });
     }
   }, []);
@@ -116,13 +110,30 @@ function App() {
         const data = await response.json();
         if (cancelled) return;
         if (data?.status === "success" && data?.user_id) {
+          const firstName =
+            typeof data.first_name === "string" && data.first_name.trim() ? data.first_name.trim() : undefined;
+          const lastName =
+            typeof data.last_name === "string" && data.last_name.trim() ? data.last_name.trim() : undefined;
+          const fullName = `${firstName ?? ""} ${lastName ?? ""}`.trim() || data.full_name || "Player";
+
           setUser({
             id: String(data.user_id),
-            fullName: `${data.first_name ?? ""} ${data.last_name ?? ""}`.trim() || data.full_name || "Player",
+            fullName,
             email: data.email,
             isGuest: Boolean(data.is_guest),
-            kills: data.kills ?? 0,
+            firstName,
+            lastName,
           });
+
+          if (!data.is_guest) {
+            const storedProfile: StoredPlayerProfile = {
+              id: String(data.user_id),
+              email: data.email ?? undefined,
+              firstName,
+              lastName,
+            };
+            localStorage.setItem("playerProfile", JSON.stringify(storedProfile));
+          }
           return;
         }
         throw new Error("Token validation response missing user data");
@@ -202,7 +213,7 @@ function App() {
         <WelcomeScreen userName={user.fullName} isGuest={user.isGuest} onStart={() => setGameStarted(true)} />
       ) : (
         <Suspense fallback={<div className="app__loading">Launching arena...</div>}>
-          <GameCanvas />
+          <GameCanvas user={user} />
         </Suspense>
       )}
     </>

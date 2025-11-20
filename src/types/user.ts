@@ -9,6 +9,15 @@ export interface AuthSuccessPayload {
   rank?: number | null;
 }
 
+export interface SessionUser {
+  id: string;
+  fullName: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  isGuest?: boolean;
+}
+
 export interface StoredPlayerProfile {
   id: string;
   email?: string;
