@@ -61,7 +61,6 @@ export function GameMenu({
 
         const rankedEntries = leaderboard.map((entry) => ({ ...entry }));
         const existing = rankedEntries.find(matchEntry) ?? null;
-        setCurrentRank(existing?.rank ?? playerRankOverride ?? null);
 
         if (existing) {
           existing.kills = kills;
@@ -83,7 +82,9 @@ export function GameMenu({
         });
 
         const newIndex = rankedEntries.findIndex(matchEntry);
-        setProjectedRank(newIndex >= 0 ? newIndex + 1 : null);
+        const resolvedRank = newIndex >= 0 ? newIndex + 1 : null;
+        setCurrentRank(resolvedRank ?? playerRankOverride ?? null);
+        setProjectedRank(resolvedRank);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         if (!cancelled) {
