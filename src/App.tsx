@@ -13,6 +13,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [gameStarted, setGameStarted] = useState(false);
   const [hasPendingToken, setHasPendingToken] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const setProfileStats = useGameStore((state) => state.setProfileStats);
   const killsLoaded = useGameStore((state) => state.killsLoaded);
   const resetProfileStats = useGameStore((state) => state.resetProfileStats);
@@ -107,7 +108,9 @@ function App() {
       localStorage.getItem("clownhunt_rest_base") ||
       (window as { CLTDTheme?: { clownhuntRestBase?: string } }).CLTDTheme?.clownhuntRestBase;
     if (!restBase) {
-      console.warn("❌ Missing clownhunt_rest_base; cannot validate token.");
+      const message = "❌ Missing clownhunt_rest_base; cannot validate token.";
+      console.warn(message);
+      setAuthError(message);
       setHasPendingToken(false);
       return;
     }
@@ -175,6 +178,7 @@ function App() {
           }
           lastValidatedTokenRef.current = activeToken;
           setHasPendingToken(false);
+          setAuthError(null);
           return;
         }
         throw new Error("Token validation response missing user data");
@@ -183,6 +187,7 @@ function App() {
         localStorage.removeItem("clownhunt_token");
         localStorage.removeItem("clownhunt_guest_token");
         setHasPendingToken(false);
+        setAuthError("❌ Token validation failed. Please refresh or log in again.");
       }
     })();
 
@@ -234,6 +239,24 @@ function App() {
     }
     if (hasPendingToken) {
       return <div className="app__loading">Validating access…</div>;
+    }
+    if (authError) {
+      return (
+        <div className="welcome-screen auth-gate">
+          <div className="welcome-box auth-box">
+            <h1 className="welcome-box-header">Access Error</h1>
+            <p className="auth-message">{authError}</p>
+            <div className="welcome-actions">
+              <button
+                className="menu-button action-button"
+                onClick={() => window.location.assign("https://www.crystalthedeveloper.ca/log-in")}
+              >
+                Go to Login
+              </button>
+            </div>
+          </div>
+        </div>
+      );
     }
     return (
       <div className="welcome-screen auth-gate">
