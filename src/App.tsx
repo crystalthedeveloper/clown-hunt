@@ -12,6 +12,7 @@ function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [gameStarted, setGameStarted] = useState(false);
+  const [hasPendingToken, setHasPendingToken] = useState(false);
   const setProfileStats = useGameStore((state) => state.setProfileStats);
   const killsLoaded = useGameStore((state) => state.killsLoaded);
   const resetProfileStats = useGameStore((state) => state.resetProfileStats);
@@ -86,26 +87,32 @@ function App() {
     };
   }, []);
 
+  const lastValidatedTokenRef = useRef<string | null>(null);
+
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
-    const hasGuestToken = searchParams.get("clownhunt_guest_token") || localStorage.getItem("clownhunt_guest_token");
-    if (user && !hasGuestToken) return;
+    const guestToken =
+      searchParams.get("clownhunt_guest_token") || localStorage.getItem("clownhunt_guest_token");
+    const playerToken =
+      searchParams.get("clownhunt_token") || localStorage.getItem("clownhunt_token");
+    const activeToken = guestToken || playerToken;
+    setHasPendingToken(Boolean(activeToken));
+    if (!activeToken) return;
     const restBase =
       searchParams.get("clownhunt_rest_base") ||
       (window as { CLTDTheme?: { clownhuntRestBase?: string } }).CLTDTheme?.clownhuntRestBase;
-    const token =
-      searchParams.get("clownhunt_token") ||
-      searchParams.get("clownhunt_guest_token") ||
-      localStorage.getItem("clownhunt_token") ||
-      localStorage.getItem("clownhunt_guest_token");
-    if (!token || !restBase) return;
+    if (!restBase) return;
+
+    if (lastValidatedTokenRef.current === activeToken) {
+      return;
+    }
 
     let cancelled = false;
     (async () => {
       try {
         const normalizedBase = restBase.replace(/\/$/, "");
         const response = await fetch(
-          `${normalizedBase}/validate_token?token=${encodeURIComponent(token)}`,
+          `${normalizedBase}/validate_token?token=${encodeURIComponent(activeToken)}`,
           { method: "GET" },
         );
         if (!response.ok) {
@@ -153,6 +160,7 @@ function App() {
             };
             localStorage.setItem("guestProfile", JSON.stringify(storedGuest));
           }
+          lastValidatedTokenRef.current = activeToken;
           return;
         }
         throw new Error("Token validation response missing user data");
@@ -160,13 +168,14 @@ function App() {
         console.warn("❌ Token validation failed:", error);
         localStorage.removeItem("clownhunt_token");
         localStorage.removeItem("clownhunt_guest_token");
+         setHasPendingToken(false);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [setHasPendingToken, user]);
 
   const lastProfileIdRef = useRef<string | null>(null);
 
@@ -208,6 +217,9 @@ function App() {
   if (!user) {
     if (BYPASS_AUTH) {
       return <div className="app__loading">Preparing dev session…</div>;
+    }
+    if (hasPendingToken) {
+      return <div className="app__loading">Validating access…</div>;
     }
     return (
       <div className="welcome-screen auth-gate">
