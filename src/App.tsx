@@ -87,8 +87,9 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (user) return;
     const searchParams = new URLSearchParams(window.location.search);
+    const hasGuestToken = searchParams.get("clownhunt_guest_token") || localStorage.getItem("clownhunt_guest_token");
+    if (user && !hasGuestToken) return;
     const restBase =
       searchParams.get("clownhunt_rest_base") ||
       (window as { CLTDTheme?: { clownhuntRestBase?: string } }).CLTDTheme?.clownhuntRestBase;
