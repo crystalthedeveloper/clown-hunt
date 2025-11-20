@@ -96,7 +96,10 @@ function App() {
     const playerToken =
       searchParams.get("clownhunt_token") || localStorage.getItem("clownhunt_token");
     const activeToken = guestToken || playerToken;
-    setHasPendingToken(Boolean(activeToken));
+    const tokenExists = Boolean(activeToken);
+    if (hasPendingToken !== tokenExists) {
+      setHasPendingToken(tokenExists);
+    }
     if (!activeToken) return;
     const restBase =
       searchParams.get("clownhunt_rest_base") ||
@@ -127,27 +130,28 @@ function App() {
             throw new Error("Token validation response missing user identifier");
           }
 
-          const firstName =
+          const firstNameRaw =
             typeof data.first_name === "string" && data.first_name.trim() ? data.first_name.trim() : undefined;
-          const lastName =
+          const lastNameRaw =
             typeof data.last_name === "string" && data.last_name.trim() ? data.last_name.trim() : undefined;
-          const fullName = `${firstName ?? ""} ${lastName ?? ""}`.trim() || data.full_name || "Player";
+          const fullNameFallback = data.full_name && data.full_name.trim() ? data.full_name.trim() : "Player";
+          const fullName = (isGuest ? firstNameRaw : `${firstNameRaw ?? ""} ${lastNameRaw ?? ""}`.trim()) || fullNameFallback;
 
           setUser({
             id: String(resolvedId),
             fullName,
             email: data.email,
             isGuest,
-            firstName: isGuest ? undefined : firstName,
-            lastName: isGuest ? undefined : lastName,
+            firstName: firstNameRaw,
+            lastName: lastNameRaw,
           });
 
           if (!isGuest) {
             const storedProfile: StoredPlayerProfile = {
               id: String(resolvedId),
               email: data.email ?? undefined,
-              firstName,
-              lastName,
+              firstName: firstNameRaw,
+              lastName: lastNameRaw,
             };
             localStorage.setItem("playerProfile", JSON.stringify(storedProfile));
           } else {
@@ -161,6 +165,7 @@ function App() {
             localStorage.setItem("guestProfile", JSON.stringify(storedGuest));
           }
           lastValidatedTokenRef.current = activeToken;
+          setHasPendingToken(false);
           return;
         }
         throw new Error("Token validation response missing user data");
@@ -168,14 +173,14 @@ function App() {
         console.warn("❌ Token validation failed:", error);
         localStorage.removeItem("clownhunt_token");
         localStorage.removeItem("clownhunt_guest_token");
-         setHasPendingToken(false);
+        setHasPendingToken(false);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [setHasPendingToken, user]);
+  }, [hasPendingToken, setHasPendingToken, user]);
 
   const lastProfileIdRef = useRef<string | null>(null);
 
