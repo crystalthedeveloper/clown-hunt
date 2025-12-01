@@ -64,6 +64,12 @@ function GameCanvas({ user }: GameCanvasProps) {
     return audio;
   }, []);
 
+  const waveAdvanceSound = useMemo(() => {
+    const audio = new Audio("/logo.mp3");
+    audio.volume = 0.7;
+    return audio;
+  }, []);
+
   const clownsPerWave = 10;
   const baseWaveSpeed = 0.6;
   const waveSpeedIncrement = 0.18;
@@ -567,6 +573,8 @@ const CorruptionTicker = ({ onOverflow, paused }: { onOverflow: (wave: number) =
       if (totalKills % 10 === 0) {
         const level = totalKills / 10 + 1;
         pushNotification(`⚔️ Wave ${level} reached!`, setNotifications, notificationTimeoutsRef);
+        waveAdvanceSound.currentTime = 0;
+        waveAdvanceSound.play();
         const refreshedLogos = generateUniquePositions(
           totalLogos,
           5,
@@ -606,6 +614,7 @@ const CorruptionTicker = ({ onOverflow, paused }: { onOverflow: (wave: number) =
     [
       advanceWave,
       generateUniquePositions,
+      waveAdvanceSound,
       killClownStat,
       playerRef,
       powerTier,

@@ -10,10 +10,6 @@ import * as THREE from "three";
 import { PlayerRef } from "./Player";
 import { getWeaponConfig, weaponConfigs } from "../config/weapons";
 
-// ✅ Load logo collection sound
-const logoSound = new Audio("/logo.mp3");
-logoSound.volume = 0.7;
-
 interface LogoItemProps {
   playerRef: React.RefObject<PlayerRef>;
   position: [number, number, number];
@@ -47,9 +43,6 @@ export function LogoItem({ playerRef, position, displayLevel, onCollect }: LogoI
 
     if (logoPos.distanceTo(playerPos) < 1.5) {
       isCollected.current = true;
-
-      logoSound.currentTime = 0;
-      logoSound.play();
 
       onCollect(displayLevel);
 
